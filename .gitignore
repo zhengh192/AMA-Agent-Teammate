@@ -1,0 +1,40 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+dist/
+build/
+*.egg-info/
+
+# Node
+node_modules/
+.vite/
+coverage/
+playwright-report/
+test-results/
+
+# Runtime data and artifacts
+var/
+*.db
+*.sqlite
+*.sqlite3
+*.duckdb
+artifacts/
+uploads/
+
+# IDE and OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
