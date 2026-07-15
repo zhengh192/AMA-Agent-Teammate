@@ -75,6 +75,7 @@ definition. A model-generated assumption remains untrusted context and never cha
 4. Review ownership, source, effective dates, sensitivity, join risks, and business-rule references.
 5. Commit the YAML, tests, and any documentation together.
 
-The AIR examples are semantic contracts only. Their connectors are intentionally not configured in
-the local demo, so an AIR analysis stops with a connector conflict until read-only AIR connections
-and physical schema catalogs are explicitly approved and configured.
+The Super Agent 930 workbook is stored as source-backed Knowledge and represented as draft semantic
+metadata. Draft definitions are visible in the registry API but never participate in SQL planning.
+Version 930 fields are explicitly marked not implemented; activation requires owner approval,
+read-only connector configuration, and validation against the physical schema.

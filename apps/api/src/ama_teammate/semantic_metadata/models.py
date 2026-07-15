@@ -67,7 +67,7 @@ class DatasetDefinition(LifecycleDefinition):
 
 class DataSourceDefinition(LifecycleDefinition):
     kind: Literal["data_source"] = "data_source"
-    platform: Literal["postgresql", "mysql", "sql_server", "file"]
+    platform: Literal["postgresql", "mysql", "sql_server", "file", "unknown"]
     connection_name: Identifier
     read_only: Literal[True]
     datasets: list[DatasetDefinition] = Field(min_length=1, max_length=100)

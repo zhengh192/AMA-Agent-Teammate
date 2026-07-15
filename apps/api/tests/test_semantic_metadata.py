@@ -37,8 +37,8 @@ def loaded_registry() -> SemanticMetadataRegistry:
 
 def test_repository_yaml_validates_and_strict_schema_rejects_unknown_fields() -> None:
     registry = loaded_registry()
-    assert len(registry.list_definitions()) >= 49
-    field = registry.get(DefinitionType.FIELD, "air.visit_log.visit_id")
+    assert len(registry.list_definitions()) >= 100
+    field = registry.get(DefinitionType.FIELD, "super_agent.session.logged_in")
     assert isinstance(field, FieldDefinition)
     invalid = field.model_dump()
     invalid["unapproved_attribute"] = "not allowed"
@@ -116,15 +116,15 @@ async def test_sql_planning_retrieves_metadata_first(tmp_path: Path) -> None:
 def test_semantic_metadata_api_lists_retrieves_and_searches(client: Any) -> None:
     listed = client.get(
         "/api/semantic-metadata",
-        params={"definition_type": "metric", "status": DefinitionStatus.ACTIVE.value},
+        params={"definition_type": "metric", "status": DefinitionStatus.DRAFT.value},
     )
     assert listed.status_code == 200
-    assert any(item["id"] == "air.case_conversion_rate" for item in listed.json())
+    assert any(item["id"] == "super_agent.whtr" for item in listed.json())
 
-    retrieved = client.get("/api/semantic-metadata/metric/air.case_conversion_rate")
+    retrieved = client.get("/api/semantic-metadata/metric/super_agent.whtr")
     assert retrieved.status_code == 200
-    assert retrieved.json()["version"] == "1.0.0"
+    assert retrieved.json()["version"] == "0.9.30"
 
-    searched = client.get("/api/semantic-metadata/search", params={"q": "visit conversion"})
+    searched = client.get("/api/semantic-metadata/search", params={"q": "working hours transfer"})
     assert searched.status_code == 200
-    assert searched.json()[0]["id"] == "air.case_conversion_rate"
+    assert searched.json()[0]["id"] == "super_agent.whtr"

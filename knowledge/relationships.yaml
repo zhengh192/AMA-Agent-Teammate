@@ -15,9 +15,7 @@ definitions:
     left_dataset_id: demo.daily_sales
     right_dataset_id: demo.campaigns
     join_keys:
-      - left_field_id: demo.daily_sales.campaign_id
-        right_field_id: demo.campaigns.campaign_id
-        type_coercion: canonical text
+      - {left_field_id: demo.daily_sales.campaign_id, right_field_id: demo.campaigns.campaign_id, type_coercion: canonical text}
     cardinality: many_to_one
     time_window_matching: {enabled: false, left_time_field_id: null, right_time_field_id: null, tolerance: null, direction: null}
     duplication_risks: [Duplicate campaign dimension keys would multiply revenue.]
@@ -26,60 +24,68 @@ definitions:
     caveats: [Always report unmatched sales and campaign rates.]
     business_rule_ids: [demo.readonly_bounded_results]
   - kind: relationship
-    id: air.visit_to_turn
-    version: 1.0.0
-    status: active
-    name: AIR Visit to Turn
-    description: Relates AIR turns to their owning AIR visit.
-    owner: AIR Product Analytics
-    source: AIR data owner specification
-    effective_from: 2026-01-01
+    id: super_agent.session_to_turn
+    version: 0.9.30
+    status: draft
+    name: Super Agent Session to Turn
+    description: Relates each interaction turn to its owning Super Agent session.
+    owner: Super Agent Data and Operations
+    source: 930 workbook; Data - Session and Data - Turn
+    effective_from: 2026-07-13
     effective_to: null
-    last_reviewed_at: 2026-07-15
-    left_dataset_id: air.visit_log
-    right_dataset_id: air.turn_log
+    last_reviewed_at: 2026-07-13
+    left_dataset_id: super_agent.session
+    right_dataset_id: super_agent.turn
     join_keys:
-      - left_field_id: air.visit_log.visit_id
-        right_field_id: air.turn_log.visit_id
-        type_coercion: uuid
+      - {left_field_id: super_agent.session.session_id, right_field_id: super_agent.turn.session_id, type_coercion: canonical string}
     cardinality: one_to_many
-    time_window_matching:
-      enabled: true
-      left_time_field_id: air.visit_log.visited_at
-      right_time_field_id: air.turn_log.created_at
-      tolerance: 24 hours after visit start
-      direction: forward
-    duplication_risks: [Aggregating visits after joining to turns can multiply visit counts.]
+    time_window_matching: {enabled: false, left_time_field_id: null, right_time_field_id: null, tolerance: null, direction: null}
+    duplication_risks: [Joining session facts to turns multiplies session-grain measures., System-triggered turns can inflate user round counts.]
     automatic_join_allowed: true
     cross_database: false
-    caveats: [Count distinct visit IDs for visit-grain metrics.]
-    business_rule_ids: []
+    caveats: [Aggregate turns before combining with session-grain metrics or count distinct session IDs.]
+    business_rule_ids: [super_agent.requirement_930_not_implemented]
   - kind: relationship
-    id: air.visit_to_case
-    version: 1.0.0
-    status: active
-    name: AIR Visit to Case Cross-Database
-    description: Relates an AIR visit to cases attributed in the separate case database.
-    owner: AIR Data Governance
-    source: AIR metric owner approval record
-    effective_from: 2026-01-01
+    id: super_agent.session_to_frontend_event
+    version: 0.9.30
+    status: draft
+    name: Super Agent Session to Frontend Event
+    description: Relates frontend telemetry events to a Super Agent session.
+    owner: Super Agent Product Analytics
+    source: 930 workbook; Data - FrontEnd
+    effective_from: 2026-07-13
     effective_to: null
-    last_reviewed_at: 2026-07-15
-    left_dataset_id: air.visit_log
-    right_dataset_id: air.case_log
+    last_reviewed_at: 2026-07-13
+    left_dataset_id: super_agent.session
+    right_dataset_id: super_agent.frontend_event
     join_keys:
-      - left_field_id: air.visit_log.visit_id
-        right_field_id: air.case_log.origin_visit_id
-        type_coercion: uuid
+      - {left_field_id: super_agent.session.session_id, right_field_id: super_agent.frontend_event.session_id, type_coercion: canonical string}
     cardinality: one_to_many
-    time_window_matching:
-      enabled: true
-      left_time_field_id: air.visit_log.visited_at
-      right_time_field_id: air.case_log.created_at
-      tolerance: 7 days after visit start
-      direction: forward
-    duplication_risks: [One visit can create multiple cases., Missing origin visit IDs create unmatched cases.]
+    time_window_matching: {enabled: false, left_time_field_id: null, right_time_field_id: null, tolerance: null, direction: null}
+    duplication_risks: [Repeated feature events can multiply session-grain measures., Request IDs may not equal feature execution IDs.]
+    automatic_join_allowed: true
+    cross_database: false
+    caveats: [Version 930 frontend feature event taxonomy is not approved.]
+    business_rule_ids: [super_agent.requirement_930_not_implemented]
+  - kind: relationship
+    id: super_agent.session_to_case
+    version: 0.9.30
+    status: draft
+    name: Super Agent Session to Case
+    description: Relates cases and downstream work-order outcomes to their originating Super Agent session.
+    owner: Super Agent Service Operations
+    source: 930 workbook; Data - Session, Data - Case, and Open Questions
+    effective_from: 2026-07-13
+    effective_to: null
+    last_reviewed_at: 2026-07-13
+    left_dataset_id: super_agent.session
+    right_dataset_id: super_agent.case
+    join_keys:
+      - {left_field_id: super_agent.session.session_id, right_field_id: super_agent.case.session_id, type_coercion: canonical string}
+    cardinality: one_to_many
+    time_window_matching: {enabled: false, left_time_field_id: null, right_time_field_id: null, tolerance: null, direction: null}
+    duplication_risks: [One session can create multiple cases., Case outcomes can arrive after the session closes., Joining case rows can inflate session metrics.]
     automatic_join_allowed: false
     cross_database: true
-    caveats: [Explicit review is required because attribution and duplication affect the metric.]
-    business_rule_ids: [air.case_attribution_window]
+    caveats: [The multi-case and multi-serial-number recording model is an open P1 decision.]
+    business_rule_ids: [super_agent.multi_case_model_open]

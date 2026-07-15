@@ -1,0 +1,52 @@
+schema_version: 1
+kind: data_source_file
+definition:
+  kind: data_source
+  id: super_agent.external_business
+  version: 0.9.30
+  status: draft
+  name: Super Agent External Business Sources
+  description: Conceptual external sources required for downstream service and commercial KPIs.
+  owner: Super Agent Data and Operations
+  source: 930_Super_Agent_Data_Requirements_20260713.xlsx; KPI Catalog!A1:H15
+  effective_from: 2026-07-13
+  effective_to: null
+  last_reviewed_at: 2026-07-13
+  platform: unknown
+  connection_name: super_agent_external_business
+  read_only: true
+  datasets:
+    - kind: dataset
+      id: super_agent.msd_service_order
+      version: 0.9.30
+      status: draft
+      name: MSD Service Order
+      description: Conceptual MSD source for RRR, NPRA, PPSN, contact, and ticket attribution.
+      owner: MSD Data Owner
+      source: 930_Super_Agent_Data_Requirements_20260713.xlsx; KPI Catalog rows 6:8 and 12:13
+      effective_from: 2026-07-13
+      effective_to: null
+      last_reviewed_at: 2026-07-13
+      data_source_id: super_agent.external_business
+      physical_name: msd_service_order
+      schema_name: null
+      grain: MTSN, repair order, contact, or ticket depending on KPI.
+      primary_key_fields: []
+      caveats: [Physical schema is unknown., Source tracking changes must be requested from the PX team.]
+    - kind: dataset
+      id: super_agent.apos_transaction
+      version: 0.9.30
+      status: draft
+      name: eService APOS Transaction
+      description: Conceptual eService APOS source for Super Agent-attributed GMV.
+      owner: Commercial Data Owner
+      source: 930_Super_Agent_Data_Requirements_20260713.xlsx; KPI Catalog row 9
+      effective_from: 2026-07-13
+      effective_to: null
+      last_reviewed_at: 2026-07-13
+      data_source_id: super_agent.external_business
+      physical_name: apos_transaction
+      schema_name: null
+      grain: One commercial transaction.
+      primary_key_fields: []
+      caveats: [Super Agent source attribution is not yet available in APOS data.]

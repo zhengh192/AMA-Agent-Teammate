@@ -1,0 +1,86 @@
+schema_version: 1
+kind: data_source_file
+definition:
+  kind: data_source
+  id: super_agent.tracking
+  version: 0.9.30
+  status: draft
+  name: Super Agent Tracking
+  description: Proposed Super Agent analytical tracking source covering sessions, turns, frontend events, and cases.
+  owner: Super Agent Data and Operations
+  source: 930_Super_Agent_Data_Requirements_20260713.xlsx; Overview and Data sheets
+  effective_from: 2026-07-13
+  effective_to: null
+  last_reviewed_at: 2026-07-13
+  platform: unknown
+  connection_name: super_agent_tracking
+  read_only: true
+  datasets:
+    - kind: dataset
+      id: super_agent.session
+      version: 0.9.30
+      status: draft
+      name: Super Agent Session
+      description: Proposed session-grain record for a Super Agent service interaction.
+      owner: Super Agent Data and Operations
+      source: 930_Super_Agent_Data_Requirements_20260713.xlsx; Data - Session!A1:G83
+      effective_from: 2026-07-13
+      effective_to: null
+      last_reviewed_at: 2026-07-13
+      data_source_id: super_agent.tracking
+      physical_name: super_agent_session
+      schema_name: null
+      grain: One row per Super Agent session.
+      primary_key_fields: [super_agent.session.session_id]
+      caveats: [Physical database and table name remain open., Version 930 fields are not implemented.]
+    - kind: dataset
+      id: super_agent.turn
+      version: 0.9.30
+      status: draft
+      name: Super Agent Turn
+      description: Proposed turn-grain record for user input, agent output, tool reasoning metadata, and feature events.
+      owner: Super Agent Data and Operations
+      source: 930_Super_Agent_Data_Requirements_20260713.xlsx; Data - Turn!A1:G49
+      effective_from: 2026-07-13
+      effective_to: null
+      last_reviewed_at: 2026-07-13
+      data_source_id: super_agent.tracking
+      physical_name: super_agent_turn
+      schema_name: null
+      grain: One row per user-agent interaction turn.
+      primary_key_fields: [super_agent.turn.turn_id]
+      caveats: [System-triggered turns should not be counted as user rounds., Version 930 fields are not implemented.]
+    - kind: dataset
+      id: super_agent.frontend_event
+      version: 0.9.30
+      status: draft
+      name: Super Agent Frontend Event
+      description: Proposed frontend interaction and feature telemetry events.
+      owner: Super Agent Product Analytics
+      source: 930_Super_Agent_Data_Requirements_20260713.xlsx; Data - FrontEnd!A1:F7
+      effective_from: 2026-07-13
+      effective_to: null
+      last_reviewed_at: 2026-07-13
+      data_source_id: super_agent.tracking
+      physical_name: super_agent_frontend_event
+      schema_name: null
+      grain: One row per frontend event or request.
+      primary_key_fields: [super_agent.frontend_event.request_id]
+      caveats: [The sheet has no explicit version column., Version 930 feature event names are requirements only.]
+    - kind: dataset
+      id: super_agent.case
+      version: 0.9.30
+      status: draft
+      name: Super Agent Case
+      description: Proposed case and work-order outcome record linked to a Super Agent session.
+      owner: Super Agent Service Operations
+      source: 930_Super_Agent_Data_Requirements_20260713.xlsx; Data - Case!A1:G19
+      effective_from: 2026-07-13
+      effective_to: null
+      last_reviewed_at: 2026-07-13
+      data_source_id: super_agent.tracking
+      physical_name: super_agent_case
+      schema_name: null
+      grain: One row per eTicket case.
+      primary_key_fields: [super_agent.case.eticket_case_number]
+      caveats: [One session can create multiple cases; the final recording model is unresolved.]

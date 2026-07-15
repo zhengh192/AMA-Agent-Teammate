@@ -1,0 +1,325 @@
+schema_version: 1
+kind: metric_file
+definitions:
+  - kind: metric
+    id: super_agent.whtr
+    version: 0.9.30
+    status: draft
+    name: WHTR
+    description: Percentage of eligible Super Agent sessions transferred to a human agent during working hours.
+    owner: Service Operations and AI Operations
+    source: 930 workbook; KPI Catalog row 2
+    effective_from: 2026-07-13
+    effective_to: null
+    last_reviewed_at: 2026-07-13
+    aliases: [working hours transfer rate, transfer rate during working hours]
+    numerator: {expression: COUNT(DISTINCT session_id WHERE agent_working_hour = true AND to_agent_flag = true), description: Eligible working-hour sessions transferred to an agent., aggregation: count_distinct, distinct_by: [super_agent.session.session_id], field_references: [super_agent.session.session_id, super_agent.session.agent_working_hour, super_agent.session.to_agent_flag]}
+    denominator: {expression: COUNT(DISTINCT eligible session_id WHERE agent_working_hour = true), description: All eligible Super Agent sessions during working hours., aggregation: count_distinct, distinct_by: [super_agent.session.session_id], field_references: [super_agent.session.session_id, super_agent.session.agent_working_hour]}
+    formula: transferred eligible working-hour sessions / all eligible working-hour sessions
+    distinct_logic: Count each eligible session once.
+    filters: [agent_working_hour = true, session is eligible]
+    exclusions: [internal test sessions, sessions without an approved eligibility decision]
+    time_logic: {event_time_field: super_agent.session.close_time, timezone: Unknown, window: Reporting week or month, late_arrival_policy: Unknown}
+    supported_dimensions: [super_agent.session.geo, super_agent.session.region, super_agent.session.country, super_agent.session.language, super_agent.session.channel, super_agent.session.intent_type]
+    source_datasets: [super_agent.session]
+    interpretation_cautions: [Business-hour calendar and session eligibility are not yet approved., Version 930 workbook is a requirements source rather than an implemented schema.]
+    business_rule_ids: [super_agent.requirement_930_not_implemented, super_agent.eligibility_definition_required]
+  - kind: metric
+    id: super_agent.touchless_rate
+    version: 0.9.30
+    status: draft
+    name: Touchless Rate
+    description: Share of eligible cases fully completed without human handling.
+    owner: Service Operations and AI Operations
+    source: 930 workbook; KPI Catalog row 3
+    effective_from: 2026-07-13
+    effective_to: null
+    last_reviewed_at: 2026-07-13
+    aliases: [full touchless rate]
+    numerator: {expression: COUNT(DISTINCT eligible case where touchless classification = touchless), description: Eligible cases created by Super Agent and completed touchlessly., aggregation: count_distinct, distinct_by: [super_agent.session.eticket_case_number], field_references: [super_agent.session.eticket_case_number, super_agent.session.touchless_exception]}
+    denominator: {expression: COUNT(DISTINCT eligible case created by Super Agent), description: All eligible cases created by Super Agent., aggregation: count_distinct, distinct_by: [super_agent.session.eticket_case_number], field_references: [super_agent.session.eticket_case_number]}
+    formula: touchless eligible cases / all eligible cases created by Super Agent
+    distinct_logic: Count each eTicket case once; do not use session count when a session creates multiple cases.
+    filters: [case is created by Super Agent, case is eligible]
+    exclusions: [cases without a stable case identifier]
+    time_logic: {event_time_field: super_agent.session.close_time, timezone: Unknown, window: Reporting week or month, late_arrival_policy: Reconcile late MSD outcomes before final reporting.}
+    supported_dimensions: [super_agent.session.geo, super_agent.session.region, super_agent.session.country, super_agent.session.channel, super_agent.session.intent_type]
+    source_datasets: [super_agent.session, super_agent.case]
+    interpretation_cautions: [The one-session-to-multiple-cases model is unresolved., Touchless classification logic needs Super Agent approval.]
+    business_rule_ids: [super_agent.multi_case_model_open, super_agent.eligibility_definition_required]
+  - kind: metric
+    id: super_agent.partial_touchless_rate
+    version: 0.9.30
+    status: draft
+    name: Partial Touchless Rate
+    description: Share of eligible cases partially automated before human completion.
+    owner: Service Operations and AI Operations
+    source: 930 workbook; KPI Catalog row 4
+    effective_from: 2026-07-13
+    effective_to: null
+    last_reviewed_at: 2026-07-13
+    aliases: [partially automated case rate]
+    numerator: {expression: COUNT(DISTINCT eligible case where touchless classification = partial touchless), description: Eligible partially touchless cases., aggregation: count_distinct, distinct_by: [super_agent.session.eticket_case_number], field_references: [super_agent.session.eticket_case_number, super_agent.session.touchless_exception]}
+    denominator: {expression: COUNT(DISTINCT eligible case created by Super Agent), description: All eligible cases created by Super Agent., aggregation: count_distinct, distinct_by: [super_agent.session.eticket_case_number], field_references: [super_agent.session.eticket_case_number]}
+    formula: partial-touchless eligible cases / all eligible cases created by Super Agent
+    distinct_logic: Count each eTicket case once.
+    filters: [case is created by Super Agent, case is eligible]
+    exclusions: [cases without a stable case identifier]
+    time_logic: {event_time_field: super_agent.session.close_time, timezone: Unknown, window: Reporting week or month, late_arrival_policy: Reconcile late MSD outcomes before final reporting.}
+    supported_dimensions: [super_agent.session.geo, super_agent.session.region, super_agent.session.country, super_agent.session.channel, super_agent.session.intent_type]
+    source_datasets: [super_agent.session, super_agent.case]
+    interpretation_cautions: [The one-session-to-multiple-cases model is unresolved.]
+    business_rule_ids: [super_agent.multi_case_model_open, super_agent.eligibility_definition_required]
+  - kind: metric
+    id: super_agent.foc_rate
+    version: 0.9.30
+    status: draft
+    name: FOC Rate
+    description: Share of eligible sessions resolved within the current Super Agent session.
+    owner: Service Operations and AI Operations
+    source: 930 workbook; KPI Catalog row 5 and Data - Session is_foc
+    effective_from: 2026-07-13
+    effective_to: null
+    last_reviewed_at: 2026-07-13
+    aliases: [FOC percent, fixed on contact rate]
+    numerator: {expression: COUNT(DISTINCT session_id WHERE is_foc = true), description: Eligible sessions resolved in the same Super Agent session., aggregation: count_distinct, distinct_by: [super_agent.session.session_id], field_references: [super_agent.session.session_id, super_agent.session.is_foc]}
+    denominator: {expression: COUNT(DISTINCT eligible session_id), description: All eligible Super Agent sessions., aggregation: count_distinct, distinct_by: [super_agent.session.session_id], field_references: [super_agent.session.session_id]}
+    formula: sessions resolved in the same session / all eligible sessions
+    distinct_logic: Count each session once.
+    filters: [session is eligible, is_foc = true for numerator]
+    exclusions: [sessions that created a case, sessions transferred to a human agent]
+    time_logic: {event_time_field: super_agent.session.close_time, timezone: Unknown, window: Reporting week or month, late_arrival_policy: Unknown}
+    supported_dimensions: [super_agent.session.geo, super_agent.session.region, super_agent.session.country, super_agent.session.channel, super_agent.session.intent_type]
+    source_datasets: [super_agent.session]
+    interpretation_cautions: [Chat and eTicket resolution may require separate definitions., LLM-derived resolution logic is not fully specified.]
+    business_rule_ids: [super_agent.foc_definition_requires_confirmation, super_agent.eligibility_definition_required]
+  - kind: metric
+    id: super_agent.rrr
+    version: 0.9.30
+    status: draft
+    name: RRR
+    description: Repeat repair rate of distinct MTSN by reporting month or week.
+    owner: Service Operations
+    source: 930 workbook; KPI Catalog row 6
+    effective_from: 2026-07-13
+    effective_to: null
+    last_reviewed_at: 2026-07-13
+    aliases: [repeat repair rate]
+    numerator: null
+    denominator: null
+    formula: Unknown; use the existing approved FS RRR logic after source attribution is available.
+    distinct_logic: Distinct MTSN under the existing FS definition.
+    filters: []
+    exclusions: []
+    time_logic: {event_time_field: super_agent.session.close_time, timezone: Unknown, window: Month or week, late_arrival_policy: Unknown}
+    supported_dimensions: []
+    source_datasets: [super_agent.msd_service_order]
+    interpretation_cautions: [Observe but do not attribute direct ownership to Super Agent., Exact FS formula and source fields are absent from this workbook.]
+    business_rule_ids: [super_agent.downstream_kpi_attribution_caution]
+  - kind: metric
+    id: super_agent.npra_rate
+    version: 0.9.30
+    status: draft
+    name: NPRA Rate
+    description: No-part-used service orders as a percentage of total service orders by closed period.
+    owner: Service Operations
+    source: 930 workbook; KPI Catalog row 7
+    effective_from: 2026-07-13
+    effective_to: null
+    last_reviewed_at: 2026-07-13
+    aliases: [no part used service order rate]
+    numerator: null
+    denominator: null
+    formula: Unknown; use the existing approved FS NPRA logic.
+    distinct_logic: Repair-order grain under the existing FS definition.
+    filters: []
+    exclusions: []
+    time_logic: {event_time_field: super_agent.session.close_time, timezone: Unknown, window: Closed month or week, late_arrival_policy: Unknown}
+    supported_dimensions: []
+    source_datasets: [super_agent.msd_service_order]
+    interpretation_cautions: [Exact FS formula and fields are absent from this workbook., Treat as a downstream observed KPI.]
+    business_rule_ids: [super_agent.downstream_kpi_attribution_caution]
+  - kind: metric
+    id: super_agent.ppsn
+    version: 0.9.30
+    status: draft
+    name: PPSN
+    description: Parts requested per distinct MTSN, including a proposed one-day view across open and closed orders.
+    owner: Service Operations
+    source: 930 workbook; KPI Catalog row 8
+    effective_from: 2026-07-13
+    effective_to: null
+    last_reviewed_at: 2026-07-13
+    aliases: [PPSNR, parts per serial number request]
+    numerator: null
+    denominator: null
+    formula: Unknown; use the existing approved FS PPSN logic, with a proposed 1-day view.
+    distinct_logic: Distinct MTSN under the existing FS definition.
+    filters: []
+    exclusions: []
+    time_logic: {event_time_field: super_agent.session.close_time, timezone: Unknown, window: General view and proposed one-day window, late_arrival_policy: Include open and closed orders.}
+    supported_dimensions: []
+    source_datasets: [super_agent.msd_service_order]
+    interpretation_cautions: [The workbook contains a definition proposal but not executable field logic.]
+    business_rule_ids: [super_agent.downstream_kpi_attribution_caution]
+  - kind: metric
+    id: super_agent.gmv
+    version: 0.9.30
+    status: draft
+    name: Super Agent GMV
+    description: Gross merchandise value generated from Super Agent-related commercial flow.
+    owner: Commercial and Product
+    source: 930 workbook; KPI Catalog row 9
+    effective_from: 2026-07-13
+    effective_to: null
+    last_reviewed_at: 2026-07-13
+    aliases: [SA GMV, gross merchandise value]
+    numerator: null
+    denominator: null
+    formula: Sum approved APOS transaction value after applying an approved Super Agent attribution filter.
+    distinct_logic: Transaction grain; deduplication key is unknown.
+    filters: [transaction is attributable to Super Agent]
+    exclusions: []
+    time_logic: {event_time_field: super_agent.session.close_time, timezone: Unknown, window: Reporting week or month, late_arrival_policy: Unknown}
+    supported_dimensions: []
+    source_datasets: [super_agent.apos_transaction]
+    interpretation_cautions: [APOS does not yet contain the required Super Agent source tracking., Attribution logic is not approved.]
+    business_rule_ids: [super_agent.downstream_kpi_attribution_caution]
+  - kind: metric
+    id: super_agent.t3b_rate
+    version: 0.9.30
+    status: draft
+    name: T3B Rate
+    description: Share of submitted surveys with a score of at least eight.
+    owner: CX and Product
+    source: 930 workbook; KPI Catalog row 10
+    effective_from: 2026-07-13
+    effective_to: null
+    last_reviewed_at: 2026-07-13
+    aliases: [T3B percent, survey satisfaction rate]
+    numerator: {expression: COUNT(submitted survey WHERE survey_score >= 8), description: Submitted surveys scoring at least eight., aggregation: count, distinct_by: [super_agent.session.session_id], field_references: [super_agent.session.survey_score, super_agent.session.session_id]}
+    denominator: {expression: COUNT(all submitted surveys), description: All submitted surveys., aggregation: count, distinct_by: [super_agent.session.session_id], field_references: [super_agent.session.survey_score, super_agent.session.session_id]}
+    formula: surveys with score at least 8 / all submitted surveys
+    distinct_logic: At most one survey response per session unless a later approved survey grain is supplied.
+    filters: [survey is submitted]
+    exclusions: [sessions without submitted survey feedback]
+    time_logic: {event_time_field: super_agent.session.close_time, timezone: Unknown, window: Reporting week or month, late_arrival_policy: Unknown}
+    supported_dimensions: [super_agent.session.geo, super_agent.session.region, super_agent.session.country, super_agent.session.channel, super_agent.session.intent_type]
+    source_datasets: [super_agent.session]
+    interpretation_cautions: [Only valid when rating coverage is sufficient., Survey scale and eligible population require confirmation.]
+    business_rule_ids: [super_agent.survey_coverage_required]
+  - kind: metric
+    id: super_agent.fcr
+    version: 0.9.30
+    status: draft
+    name: FCR
+    description: First-contact resolution rate based on the survey resolution response.
+    owner: CX and Product
+    source: 930 workbook; KPI Catalog row 11
+    effective_from: 2026-07-13
+    effective_to: null
+    last_reviewed_at: 2026-07-13
+    aliases: [first contact resolution rate]
+    numerator: {expression: COUNT(submitted survey WHERE survey_resolved = yes), description: Surveys indicating the issue was resolved., aggregation: count, distinct_by: [super_agent.session.session_id], field_references: [super_agent.session.survey_resolved, super_agent.session.session_id]}
+    denominator: {expression: COUNT(all submitted resolution surveys), description: All submitted resolution survey responses., aggregation: count, distinct_by: [super_agent.session.session_id], field_references: [super_agent.session.survey_resolved, super_agent.session.session_id]}
+    formula: resolved yes survey responses / all submitted resolution survey responses
+    distinct_logic: At most one resolution response per session pending an approved survey grain.
+    filters: [resolution survey is submitted]
+    exclusions: [sessions without a survey resolution response]
+    time_logic: {event_time_field: super_agent.session.close_time, timezone: Unknown, window: Reporting week or month plus repeat-contact window, late_arrival_policy: Unknown}
+    supported_dimensions: [super_agent.session.geo, super_agent.session.region, super_agent.session.country, super_agent.session.channel, super_agent.session.intent_type]
+    source_datasets: [super_agent.session]
+    interpretation_cautions: [Repeat-contact window is not defined., Survey response bias must be reported.]
+    business_rule_ids: [super_agent.fcr_repeat_window_required, super_agent.survey_coverage_required]
+  - kind: metric
+    id: super_agent.sa_contact_rate
+    version: 0.9.30
+    status: draft
+    name: SA Contact Rate
+    description: Share of eligible contacts entering or served by Super Agent.
+    owner: Product and Operations
+    source: 930 workbook; KPI Catalog row 12
+    effective_from: 2026-07-13
+    effective_to: null
+    last_reviewed_at: 2026-07-13
+    aliases: [SA Contact percent, Super Agent contact penetration]
+    numerator: null
+    denominator: null
+    formula: Unknown; numerator, denominator, eligibility, and attribution fields are not supplied.
+    distinct_logic: Proposed session grain, pending MSD contact definition.
+    filters: []
+    exclusions: []
+    time_logic: {event_time_field: super_agent.session.close_time, timezone: Unknown, window: Reporting week or month, late_arrival_policy: Unknown}
+    supported_dimensions: [super_agent.session.geo, super_agent.session.region, super_agent.session.country, super_agent.session.channel]
+    source_datasets: [super_agent.msd_service_order, super_agent.session]
+    interpretation_cautions: [The workbook does not define an executable formula., PX team source-tracking work is required.]
+    business_rule_ids: [super_agent.eligibility_definition_required]
+  - kind: metric
+    id: super_agent.sa_ticket_rate
+    version: 0.9.30
+    status: draft
+    name: SA Ticket Rate
+    description: Share of eligible tickets touched or generated by Super Agent.
+    owner: Product and Operations
+    source: 930 workbook; KPI Catalog row 13
+    effective_from: 2026-07-13
+    effective_to: null
+    last_reviewed_at: 2026-07-13
+    aliases: [SA Ticket percent, Super Agent ticket penetration]
+    numerator: null
+    denominator: null
+    formula: Unknown; ticket attribution and eligibility fields are not supplied.
+    distinct_logic: Distinct eligible ticket under an approved case identity model.
+    filters: []
+    exclusions: []
+    time_logic: {event_time_field: super_agent.session.close_time, timezone: Unknown, window: Reporting week or month, late_arrival_policy: Unknown}
+    supported_dimensions: [super_agent.session.geo, super_agent.session.region, super_agent.session.country, super_agent.session.channel]
+    source_datasets: [super_agent.msd_service_order, super_agent.case]
+    interpretation_cautions: [The workbook does not define an executable formula., One session can create multiple tickets.]
+    business_rule_ids: [super_agent.eligibility_definition_required, super_agent.multi_case_model_open]
+  - kind: metric
+    id: super_agent.time_to_resolution
+    version: 0.9.30
+    status: draft
+    name: Time to Resolution
+    description: Median or average elapsed time from session start to resolution or effective endpoint.
+    owner: Product and Service Design
+    source: 930 workbook; KPI Catalog row 14
+    effective_from: 2026-07-13
+    effective_to: null
+    last_reviewed_at: 2026-07-13
+    aliases: [resolution duration]
+    numerator: null
+    denominator: null
+    formula: Unknown; endpoint, aggregation statistic, and treatment of unresolved sessions are not supplied.
+    distinct_logic: Session or resolution-path grain requires approval.
+    filters: []
+    exclusions: []
+    time_logic: {event_time_field: super_agent.session.start_time, timezone: Unknown, window: From session start to approved resolution endpoint, late_arrival_policy: Unknown}
+    supported_dimensions: [super_agent.session.geo, super_agent.session.region, super_agent.session.country, super_agent.session.channel, super_agent.session.intent_type]
+    source_datasets: [super_agent.session, super_agent.case]
+    interpretation_cautions: [Median versus average is unresolved., Resolution endpoint is unresolved.]
+    business_rule_ids: [super_agent.resolution_endpoint_required]
+  - kind: metric
+    id: super_agent.contacts_per_resolution
+    version: 0.9.30
+    status: draft
+    name: Contacts per Resolution
+    description: Average number of contacts required to reach one resolution.
+    owner: Product and Service Design
+    source: 930 workbook; KPI Catalog row 15
+    effective_from: 2026-07-13
+    effective_to: null
+    last_reviewed_at: 2026-07-13
+    aliases: [contact count per resolution]
+    numerator: null
+    denominator: null
+    formula: Unknown; contact identity, resolution identity, and linking window are not supplied.
+    distinct_logic: Resolution-path grain requires approval.
+    filters: []
+    exclusions: []
+    time_logic: {event_time_field: super_agent.session.start_time, timezone: Unknown, window: Approved resolution journey window, late_arrival_policy: Unknown}
+    supported_dimensions: [super_agent.session.geo, super_agent.session.region, super_agent.session.country, super_agent.session.channel, super_agent.session.intent_type]
+    source_datasets: [super_agent.session, super_agent.case, super_agent.msd_service_order]
+    interpretation_cautions: [Cross-session identity and repeat-contact window are unresolved.]
+    business_rule_ids: [super_agent.resolution_endpoint_required, super_agent.fcr_repeat_window_required]
