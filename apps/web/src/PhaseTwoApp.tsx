@@ -1,10 +1,11 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { getAnalysisResult, streamApproval } from "./analysisApi";
 import type { AnalysisResult, ApprovalPayload } from "./analysisTypes";
 import { api, streamChat } from "./api";
 import { PlotlyFigure } from "./PlotlyFigure";
 import type { ChatMessage, ChatSession, RunStatus, ServerEvent, TraceEvent } from "./types";
 import "./analysis.css";
+import "./chat-feedback.css";
 
 const statusLabels: Record<RunStatus, string> = {
   clarifying: "Clarifying",
@@ -26,6 +27,7 @@ export default function PhaseTwoApp() {
   const [input, setInput] = useState("");
   const [status, setStatus] = useState<RunStatus>("completed");
   const [streamText, setStreamText] = useState("");
+  const [isThinking, setIsThinking] = useState(false);
   const [clarification, setClarification] = useState("");
   const [clarificationRunId, setClarificationRunId] = useState<string | null>(null);
   const [currentRunId, setCurrentRunId] = useState<string | null>(null);
@@ -33,12 +35,20 @@ export default function PhaseTwoApp() {
   const [approval, setApproval] = useState<ApprovalPayload | null>(null);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const conversationEndRef = useRef<HTMLDivElement>(null);
 
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId) ?? null,
     [sessions, activeSessionId],
   );
   const finalDataset = analysisResult?.datasets.at(-1) ?? null;
+
+  useEffect(() => {
+    conversationEndRef.current?.scrollIntoView?.({
+      behavior: streamText ? "auto" : "smooth",
+      block: "end",
+    });
+  }, [messages, streamText, isThinking, clarification]);
 
   async function loadMessages(sessionId: string) {
     const loaded = await api.listMessages(sessionId);
@@ -60,6 +70,7 @@ export default function PhaseTwoApp() {
     setApproval(null);
     setAnalysisResult(null);
     setStreamText("");
+    setIsThinking(false);
     setTrace([]);
     await loadMessages(sessionId);
   }
@@ -103,35 +114,42 @@ export default function PhaseTwoApp() {
     if (event.event === "run.started" || event.event === "run.resumed") setStatus("planning");
     if (event.event === "status") setStatus((textValue(event.data.status) || "executing") as RunStatus);
     if (event.event === "message.delta") {
+      setIsThinking(false);
       buffer.text += textValue(event.data.delta);
       setStreamText(buffer.text);
     }
     if (event.event === "clarification.required") {
+      setIsThinking(false);
       setStatus("clarifying");
       setClarification(textValue(event.data.question));
       setClarificationRunId(runId);
     }
     if (event.event === "analysis.plan" || event.event === "approval.required") {
+      setIsThinking(false);
       setStatus("waiting_approval");
       setApproval(event.data as unknown as ApprovalPayload);
       setClarificationRunId(null);
       setClarification("");
     }
     if (event.event === "analysis.result") {
+      setIsThinking(false);
       setAnalysisResult(event.data as unknown as AnalysisResult);
     }
     if (event.event === "approval.decision") {
+      setIsThinking(false);
       setStatus("failed");
       setApproval(null);
       setError("The SQL plan was not approved. Submit a revised analytical request when ready.");
     }
     if (event.event === "run.completed") {
+      setIsThinking(false);
       setStatus("completed");
       setApproval(null);
       setClarificationRunId(null);
       setClarification("");
     }
     if (event.event === "error") {
+      setIsThinking(false);
       setStatus("failed");
       setError(textValue(event.data.message) || "The run failed. Review the safe trace.");
     }
@@ -144,9 +162,22 @@ export default function PhaseTwoApp() {
     setInput("");
     setError(null);
     setStreamText("");
+    setIsThinking(true);
     setAnalysisResult(null);
     if (!clarificationRunId) setClarification("");
     setStatus("planning");
+    setMessages((current) => [
+      ...current,
+      {
+        id: `local-${Date.now()}`,
+        session_id: activeSessionId,
+        run_id: clarificationRunId,
+        role: "user",
+        content,
+        epistemic_label: null,
+        created_at: new Date().toISOString(),
+      },
+    ]);
     const buffer = { text: "", runId: clarificationRunId };
     try {
       await streamChat(activeSessionId, content, clarificationRunId, (serverEvent) =>
@@ -155,7 +186,9 @@ export default function PhaseTwoApp() {
       await loadMessages(activeSessionId);
       if (buffer.runId) await refreshTrace(buffer.runId);
       setStreamText("");
+      setIsThinking(false);
     } catch (caught) {
+      setIsThinking(false);
       setStatus("failed");
       setError(caught instanceof Error ? caught.message : "Unable to send message.");
     }
@@ -166,6 +199,7 @@ export default function PhaseTwoApp() {
     setError(null);
     setStatus("executing");
     setStreamText("");
+    setIsThinking(true);
     const buffer = { text: "", runId: approval.run_id };
     try {
       await streamApproval(
@@ -178,7 +212,9 @@ export default function PhaseTwoApp() {
       await loadMessages(activeSessionId);
       await refreshTrace(approval.run_id);
       setStreamText("");
+      setIsThinking(false);
     } catch (caught) {
+      setIsThinking(false);
       setStatus("failed");
       setError(caught instanceof Error ? caught.message : "Approval action failed.");
     }
@@ -201,8 +237,10 @@ export default function PhaseTwoApp() {
           {messages.length === 0 && !clarification && !streamText ? <div className="empty-state"><h2>Ask a data question</h2><p>Try: “Query revenue trend for 2025 from the PostgreSQL sales data source.”</p></div> : null}
           {messages.map((message) => <article className={`message ${message.role}`} key={message.id}><div className="message-meta"><strong>{message.role === "user" ? "You" : "AMA"}</strong>{message.epistemic_label ? <span>{message.epistemic_label}</span> : null}</div><p>{message.content}</p></article>)}
           {clarification ? <article className="message assistant clarification"><div className="message-meta"><strong>AMA</strong><span>Need confirmation</span></div><p>{clarification}</p></article> : null}
+          {isThinking && !streamText ? <article className="message assistant thinking" role="status" aria-live="polite"><div className="message-meta"><strong>AMA</strong><span>Thinking</span></div><p className="thinking-copy">Thinking<span className="thinking-dots" aria-hidden="true"><i /><i /><i /></span></p></article> : null}
           {streamText ? <article className="message assistant streaming"><div className="message-meta"><strong>AMA</strong><span>Streaming</span></div><p>{streamText}<span className="cursor" /></p></article> : null}
           {error ? <div className="error-banner" role="alert"><strong>Safe error</strong><p>{error}</p></div> : null}
+          <div ref={conversationEndRef} />
         </section>
 
         {approval ? <section className="analysis-card approval-card" aria-label="SQL review"><div className="card-heading"><div><span className="eyebrow">Approval required</span><h2>Analysis plan and SQL review</h2></div><span className="policy-chip">{approval.plan.policy_version}</span></div><p>{approval.plan.goal}</p><dl className="plan-grid"><div><dt>Method</dt><dd>{approval.plan.analysis_type}</dd></div><div><dt>Metric</dt><dd>{approval.plan.metric}</dd></div><div><dt>Chart</dt><dd>{approval.plan.chart_type}</dd></div><div><dt>Success</dt><dd>{approval.plan.success_criteria}</dd></div></dl>{approval.plan.queries.map((query) => <div className="sql-review" key={query.id}><div><strong>{query.source_id}</strong><span>{query.dialect} · max {query.max_rows} rows · {query.timeout_seconds}s</span></div><pre><code>{query.sql}</code></pre><small>Parameters: {JSON.stringify(query.parameters)}</small></div>)}{approval.plan.join_plan ? <details open><summary>Validated cross-source join</summary><pre>{JSON.stringify(approval.plan.join_plan, null, 2)}</pre></details> : null}<div className="approval-actions"><button className="approve" type="button" onClick={() => void decide("approved")}>Approve and execute</button><button type="button" onClick={() => void decide("changes_requested")}>Request changes</button><button className="reject" type="button" onClick={() => void decide("rejected")}>Reject</button></div><small className="hash">Exact payload: {approval.payload_hash.slice(0, 16)}…</small></section> : null}
