@@ -1,0 +1,35 @@
+schema_version: 1
+kind: data_source_file
+definition:
+  kind: data_source
+  id: demo.marketing
+  version: 1.0.0
+  status: active
+  name: Demo Marketing
+  description: Read-only campaign source used by the local cross-database demo.
+  owner: Marketing Analytics
+  source: Phase 2 demo database contract
+  effective_from: 2025-01-01
+  effective_to: null
+  last_reviewed_at: 2026-07-15
+  platform: mysql
+  connection_name: marketing_mysql
+  read_only: true
+  datasets:
+    - kind: dataset
+      id: demo.campaigns
+      version: 1.0.0
+      status: active
+      name: Campaigns
+      description: Campaign channel and bounded spend attributes.
+      owner: Marketing Analytics
+      source: Phase 2 demo database contract
+      effective_from: 2025-01-01
+      effective_to: null
+      last_reviewed_at: 2026-07-15
+      data_source_id: demo.marketing
+      physical_name: campaigns
+      schema_name: main
+      grain: One row per campaign.
+      primary_key_fields: [demo.campaigns.campaign_id]
+      caveats: [The owner_token column is denied and absent from semantic fields.]

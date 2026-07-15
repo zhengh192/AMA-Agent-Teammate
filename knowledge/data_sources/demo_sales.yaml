@@ -1,0 +1,52 @@
+schema_version: 1
+kind: data_source_file
+definition:
+  kind: data_source
+  id: demo.sales
+  version: 1.0.0
+  status: active
+  name: Demo Sales
+  description: Read-only sales source used by the local governed analysis demo.
+  owner: Data Platform
+  source: Phase 2 demo database contract
+  effective_from: 2025-01-01
+  effective_to: null
+  last_reviewed_at: 2026-07-15
+  platform: postgresql
+  connection_name: sales_postgres
+  read_only: true
+  datasets:
+    - kind: dataset
+      id: demo.daily_sales
+      version: 1.0.0
+      status: active
+      name: Daily Sales
+      description: Revenue and order facts by sale date and campaign.
+      owner: Sales Analytics
+      source: Phase 2 demo database contract
+      effective_from: 2025-01-01
+      effective_to: null
+      last_reviewed_at: 2026-07-15
+      data_source_id: demo.sales
+      physical_name: daily_sales
+      schema_name: main
+      grain: One row per sale date and campaign.
+      primary_key_fields: [demo.daily_sales.sale_date, demo.daily_sales.campaign_id]
+      caveats: [Demo data is monthly despite the daily_sales physical name.]
+    - kind: dataset
+      id: demo.segment_sales
+      version: 1.0.0
+      status: active
+      name: Segment Sales
+      description: Revenue components by month, region, and customer segment.
+      owner: Sales Analytics
+      source: Phase 2 demo database contract
+      effective_from: 2025-01-01
+      effective_to: null
+      last_reviewed_at: 2026-07-15
+      data_source_id: demo.sales
+      physical_name: segment_sales
+      schema_name: main
+      grain: One row per month, region, and segment.
+      primary_key_fields: [demo.segment_sales.month, demo.segment_sales.region, demo.segment_sales.segment]
+      caveats: [Only a bounded subset of months is provided.]

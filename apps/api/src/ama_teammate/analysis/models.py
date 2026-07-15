@@ -5,6 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from ama_teammate.semantic_metadata.models import DefinitionReference
 from ama_teammate.sql_policy.models import ValidatedQuery
 
 
@@ -62,6 +63,8 @@ class AnalysisPlan(BaseModel):
     queries: list[ValidatedQuery]
     join_plan: JoinPlan | None = None
     policy_version: str
+    metric_definition: DefinitionReference
+    relationship_definitions: list[DefinitionReference] = Field(default_factory=list)
 
     def approval_payload(self) -> dict[str, Any]:
         return {
@@ -74,6 +77,10 @@ class AnalysisPlan(BaseModel):
             "queries": [query.approval_payload() for query in self.queries],
             "join_plan": self.join_plan.model_dump() if self.join_plan else None,
             "policy_version": self.policy_version,
+            "metric_definition": self.metric_definition.model_dump(mode="json"),
+            "relationship_definitions": [
+                item.model_dump(mode="json") for item in self.relationship_definitions
+            ],
         }
 
 

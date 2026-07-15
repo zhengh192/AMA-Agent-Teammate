@@ -1,0 +1,35 @@
+schema_version: 1
+kind: data_source_file
+definition:
+  kind: data_source
+  id: demo.operations
+  version: 1.0.0
+  status: active
+  name: Demo Operations
+  description: Read-only funnel event aggregates with intentional quality issues.
+  owner: Operations Analytics
+  source: Phase 2 demo database contract
+  effective_from: 2025-01-01
+  effective_to: null
+  last_reviewed_at: 2026-07-15
+  platform: sql_server
+  connection_name: operations_sqlserver
+  read_only: true
+  datasets:
+    - kind: dataset
+      id: demo.funnel_events
+      version: 1.0.0
+      status: active
+      name: Funnel Events
+      description: Period and stage aggregates for visitor and conversion counts.
+      owner: Operations Analytics
+      source: Phase 2 demo database contract
+      effective_from: 2025-01-01
+      effective_to: null
+      last_reviewed_at: 2026-07-15
+      data_source_id: demo.operations
+      physical_name: funnel_events
+      schema_name: main
+      grain: One aggregate event row per period, stage, and campaign.
+      primary_key_fields: [demo.funnel_events.event_id]
+      caveats: [event_id can be null or duplicated in the intentional quality fixture.]

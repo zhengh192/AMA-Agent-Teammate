@@ -17,6 +17,7 @@ from ama_teammate.data_access.demo import (
 from ama_teammate.data_access.registry import ConnectorRegistry
 from ama_teammate.evidence.validator import EvidenceValidator
 from ama_teammate.providers.factory import ProviderBundle
+from ama_teammate.semantic_metadata.registry import SemanticMetadataRegistry
 from ama_teammate.services.analysis import AnalysisService
 from ama_teammate.sql_policy.gateway import SQLSafetyGateway
 from ama_teammate.storage.analysis_repository import AnalysisRepository
@@ -35,6 +36,7 @@ async def create_analysis_runtime(
     database: Database,
     repository: Repository,
     providers: ProviderBundle,
+    semantic_registry: SemanticMetadataRegistry,
 ) -> AnalysisRuntime:
     manager = DemoDatabaseManager(settings.ama_demo_database_root)
     await manager.initialize()
@@ -45,7 +47,7 @@ async def create_analysis_runtime(
         ]
     )
     gateway = SQLSafetyGateway()
-    planner = AnalysisPlanner(providers, registry, gateway)
+    planner = AnalysisPlanner(providers, registry, gateway, semantic_registry)
     service = AnalysisService(
         planner=planner,
         registry=registry,

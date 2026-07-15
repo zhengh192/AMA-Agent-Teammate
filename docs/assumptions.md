@@ -1,3 +1,13 @@
+# Semantic metadata registry
+
+- The repository-root `knowledge/` directory is a reviewed, Git-controlled semantic contract and
+  is separate from user-uploaded Knowledge stored by Phase 3.
+- AIR examples are metadata-only until approved read-only AIR connectors and physical schema
+  catalogs are configured; attempting to plan against them must stop rather than fall back.
+- Definition semantic versions use `MAJOR.MINOR.PATCH`; Git history remains the authoritative file
+  change history.
+- Natural-language creation or modification of semantic metadata remains postponed as requested.
+
 # Assumptions and Decisions Needed
 
 ## Confirmed from the product brief

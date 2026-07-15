@@ -1,0 +1,52 @@
+schema_version: 1
+kind: data_source_file
+definition:
+  kind: data_source
+  id: air.activity
+  version: 1.0.0
+  status: active
+  name: AIR Activity
+  description: Authoritative semantic contract for AIR visit and turn activity logs.
+  owner: AIR Product Analytics
+  source: AIR data owner specification
+  effective_from: 2026-01-01
+  effective_to: null
+  last_reviewed_at: 2026-07-15
+  platform: postgresql
+  connection_name: air_activity_postgres
+  read_only: true
+  datasets:
+    - kind: dataset
+      id: air.visit_log
+      version: 1.0.0
+      status: active
+      name: AIR Visit Log
+      description: AIR user visits captured at visit grain.
+      owner: AIR Product Analytics
+      source: AIR data owner specification
+      effective_from: 2026-01-01
+      effective_to: null
+      last_reviewed_at: 2026-07-15
+      data_source_id: air.activity
+      physical_name: air_visit_log
+      schema_name: analytics
+      grain: One row per AIR visit.
+      primary_key_fields: [air.visit_log.visit_id]
+      caveats: [Late events can arrive for up to two days.]
+    - kind: dataset
+      id: air.turn_log
+      version: 1.0.0
+      status: active
+      name: AIR Turn Log
+      description: AIR agent turns captured at turn grain.
+      owner: AIR Product Analytics
+      source: AIR data owner specification
+      effective_from: 2026-01-01
+      effective_to: null
+      last_reviewed_at: 2026-07-15
+      data_source_id: air.activity
+      physical_name: air_turn_log
+      schema_name: analytics
+      grain: One row per AIR agent turn.
+      primary_key_fields: [air.turn_log.turn_id]
+      caveats: [System-generated turns must be excluded from user conversion analysis.]

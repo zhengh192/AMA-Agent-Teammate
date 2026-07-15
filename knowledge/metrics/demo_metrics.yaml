@@ -1,0 +1,109 @@
+schema_version: 1
+kind: metric_file
+definitions:
+  - kind: metric
+    id: demo.revenue
+    version: 1.0.0
+    status: active
+    name: Revenue
+    description: Sum of recognized demo sales revenue within the selected period.
+    owner: Finance Analytics
+    source: Phase 2 demo metric contract
+    effective_from: 2025-01-01
+    effective_to: null
+    last_reviewed_at: 2026-07-15
+    aliases: [revenue by channel, revenue versus marketing spend]
+    numerator:
+      expression: SUM(revenue)
+      description: Sum recognized revenue facts.
+      aggregation: sum
+      distinct_by: []
+      field_references: [demo.daily_sales.revenue, demo.segment_sales.revenue]
+    denominator: null
+    formula: SUM(revenue)
+    distinct_logic: Do not deduplicate valid campaign-date or segment aggregates.
+    filters: [sale date is inside the requested half-open interval]
+    exclusions: [denied customer columns, rows outside the approved time interval]
+    time_logic:
+      event_time_field: demo.daily_sales.sale_date
+      timezone: UTC
+      window: Half-open interval [start_date, end_date)
+      late_arrival_policy: Demo data is immutable; production use requires owner review.
+    supported_dimensions: [demo.daily_sales.sale_date, demo.daily_sales.campaign_id, demo.segment_sales.month, demo.segment_sales.region, demo.segment_sales.segment, demo.campaigns.channel]
+    source_datasets: [demo.daily_sales, demo.segment_sales, demo.campaigns]
+    interpretation_cautions: [Cross-database channel results inherit join unmatched-rate limitations., Association with spend is not evidence of causation.]
+    business_rule_ids: [demo.readonly_bounded_results]
+  - kind: metric
+    id: demo.conversion_rate
+    version: 1.0.0
+    status: active
+    name: Conversion Rate
+    description: Ratio of funnel conversions to visitors for bounded valid rows.
+    owner: Operations Analytics
+    source: Phase 2 demo metric contract
+    effective_from: 2025-01-01
+    effective_to: null
+    last_reviewed_at: 2026-07-15
+    aliases: [funnel conversion rate]
+    numerator:
+      expression: SUM(conversions)
+      description: Total conversions on non-null funnel rows.
+      aggregation: sum
+      distinct_by: [demo.funnel_events.event_id]
+      field_references: [demo.funnel_events.conversions]
+    denominator:
+      expression: SUM(visitors)
+      description: Total visitors on non-null funnel rows.
+      aggregation: sum
+      distinct_by: [demo.funnel_events.event_id]
+      field_references: [demo.funnel_events.visitors]
+    formula: SUM(conversions) / NULLIF(SUM(visitors), 0)
+    distinct_logic: Duplicate event IDs must be surfaced before a rate is accepted.
+    filters: [period is inside the requested half-open interval]
+    exclusions: [rows with null numerator or denominator from the final rate]
+    time_logic:
+      event_time_field: demo.funnel_events.period
+      timezone: UTC
+      window: Half-open interval [start_date, end_date)
+      late_arrival_policy: Demo data is immutable.
+    supported_dimensions: [demo.funnel_events.period, demo.funnel_events.stage, demo.funnel_events.campaign_id]
+    source_datasets: [demo.funnel_events]
+    interpretation_cautions: [Null and duplicate rows can materially bias the rate., The metric is descriptive and not causal.]
+    business_rule_ids: [demo.funnel_quality_gate]
+  - kind: metric
+    id: demo.funnel_completeness
+    version: 1.0.0
+    status: active
+    name: Funnel Completeness
+    description: Quality assessment of required funnel identifiers and measure fields.
+    owner: Operations Analytics
+    source: Phase 2 demo quality contract
+    effective_from: 2025-01-01
+    effective_to: null
+    last_reviewed_at: 2026-07-15
+    aliases: [funnel data completeness]
+    numerator:
+      expression: COUNT(rows with required values)
+      description: Rows with populated event ID, visitors, and conversions.
+      aggregation: count
+      distinct_by: []
+      field_references: [demo.funnel_events.event_id, demo.funnel_events.visitors, demo.funnel_events.conversions]
+    denominator:
+      expression: COUNT(all bounded rows)
+      description: All rows in the selected period.
+      aggregation: count
+      distinct_by: []
+      field_references: []
+    formula: complete rows / all bounded rows
+    distinct_logic: Duplicate event IDs are reported independently from missingness.
+    filters: [period is inside the requested half-open interval]
+    exclusions: []
+    time_logic:
+      event_time_field: demo.funnel_events.period
+      timezone: UTC
+      window: Half-open interval [start_date, end_date)
+      late_arrival_policy: Demo data is immutable.
+    supported_dimensions: [demo.funnel_events.period, demo.funnel_events.stage]
+    source_datasets: [demo.funnel_events]
+    interpretation_cautions: [Completeness does not prove semantic correctness.]
+    business_rule_ids: [demo.funnel_quality_gate]

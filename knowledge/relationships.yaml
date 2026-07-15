@@ -1,0 +1,85 @@
+schema_version: 1
+kind: relationship_file
+definitions:
+  - kind: relationship
+    id: demo.sales_to_campaign
+    version: 1.0.0
+    status: active
+    name: Demo Sales to Campaign
+    description: Relates sales facts to the campaign dimension across demo databases.
+    owner: Data Platform
+    source: Phase 2 demo join contract
+    effective_from: 2025-01-01
+    effective_to: null
+    last_reviewed_at: 2026-07-15
+    left_dataset_id: demo.daily_sales
+    right_dataset_id: demo.campaigns
+    join_keys:
+      - left_field_id: demo.daily_sales.campaign_id
+        right_field_id: demo.campaigns.campaign_id
+        type_coercion: canonical text
+    cardinality: many_to_one
+    time_window_matching: {enabled: false, left_time_field_id: null, right_time_field_id: null, tolerance: null, direction: null}
+    duplication_risks: [Duplicate campaign dimension keys would multiply revenue.]
+    automatic_join_allowed: true
+    cross_database: true
+    caveats: [Always report unmatched sales and campaign rates.]
+    business_rule_ids: [demo.readonly_bounded_results]
+  - kind: relationship
+    id: air.visit_to_turn
+    version: 1.0.0
+    status: active
+    name: AIR Visit to Turn
+    description: Relates AIR turns to their owning AIR visit.
+    owner: AIR Product Analytics
+    source: AIR data owner specification
+    effective_from: 2026-01-01
+    effective_to: null
+    last_reviewed_at: 2026-07-15
+    left_dataset_id: air.visit_log
+    right_dataset_id: air.turn_log
+    join_keys:
+      - left_field_id: air.visit_log.visit_id
+        right_field_id: air.turn_log.visit_id
+        type_coercion: uuid
+    cardinality: one_to_many
+    time_window_matching:
+      enabled: true
+      left_time_field_id: air.visit_log.visited_at
+      right_time_field_id: air.turn_log.created_at
+      tolerance: 24 hours after visit start
+      direction: forward
+    duplication_risks: [Aggregating visits after joining to turns can multiply visit counts.]
+    automatic_join_allowed: true
+    cross_database: false
+    caveats: [Count distinct visit IDs for visit-grain metrics.]
+    business_rule_ids: []
+  - kind: relationship
+    id: air.visit_to_case
+    version: 1.0.0
+    status: active
+    name: AIR Visit to Case Cross-Database
+    description: Relates an AIR visit to cases attributed in the separate case database.
+    owner: AIR Data Governance
+    source: AIR metric owner approval record
+    effective_from: 2026-01-01
+    effective_to: null
+    last_reviewed_at: 2026-07-15
+    left_dataset_id: air.visit_log
+    right_dataset_id: air.case_log
+    join_keys:
+      - left_field_id: air.visit_log.visit_id
+        right_field_id: air.case_log.origin_visit_id
+        type_coercion: uuid
+    cardinality: one_to_many
+    time_window_matching:
+      enabled: true
+      left_time_field_id: air.visit_log.visited_at
+      right_time_field_id: air.case_log.created_at
+      tolerance: 7 days after visit start
+      direction: forward
+    duplication_risks: [One visit can create multiple cases., Missing origin visit IDs create unmatched cases.]
+    automatic_join_allowed: false
+    cross_database: true
+    caveats: [Explicit review is required because attribution and duplication affect the metric.]
+    business_rule_ids: [air.case_attribution_window]

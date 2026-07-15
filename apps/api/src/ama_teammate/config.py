@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     ama_provider: Literal["mock", "azure"] = "mock"
     ama_embedding_provider: Literal["mock", "azure"] = "mock"
     ama_skill_registry_root: Path = Path("./skills/registry")
+    ama_semantic_metadata_root: Path = Path("./knowledge")
     ama_upload_max_bytes: int = Field(default=10_000_000, gt=0, le=50_000_000)
     ama_development_user_id: str = "local-dev-user"
     ama_development_user_name: str = "Local Developer"
@@ -49,6 +50,7 @@ class Settings(BaseSettings):
         "ama_artifact_root",
         "ama_demo_database_root",
         "ama_skill_registry_root",
+        "ama_semantic_metadata_root",
         mode="before",
     )
     @classmethod

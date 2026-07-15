@@ -14,6 +14,8 @@ from ama_teammate.data_access.registry import ConnectorRegistry
 from ama_teammate.domain.models import new_id
 from ama_teammate.providers.base import ProviderMessage, StructuredProviderRequest
 from ama_teammate.providers.factory import ProviderBundle
+from ama_teammate.semantic_metadata.models import DefinitionReference, DefinitionType
+from ama_teammate.semantic_metadata.registry import SemanticMetadataRegistry
 from ama_teammate.sql_policy.gateway import POLICY_VERSION, SQLSafetyGateway
 from ama_teammate.sql_policy.models import QueryProposal, ValidatedQuery
 
@@ -29,10 +31,12 @@ class AnalysisPlanner:
         providers: ProviderBundle,
         registry: ConnectorRegistry,
         gateway: SQLSafetyGateway,
+        semantic_registry: SemanticMetadataRegistry,
     ) -> None:
         self.providers = providers
         self.registry = registry
         self.gateway = gateway
+        self.semantic_registry = semantic_registry
 
     async def build(self, run_id: str, question: str) -> AnalysisPlan:
         catalog = self.registry.redacted_catalog()
@@ -51,6 +55,12 @@ class AnalysisPlanner:
             raise TypeError("Provider returned an invalid analysis intent")
         for source_id in intent.source_ids:
             self.registry.config(source_id)
+        metadata = self.semantic_registry.resolve_analysis_metadata(
+            intent.metric,
+            intent.dimensions,
+            context=question,
+            connectors=self.registry,
+        )
         proposals, join_plan = self._resolve_queries(intent)
         validated = [
             self.gateway.validate(proposal, self.registry.config(proposal.source_id))
@@ -65,6 +75,19 @@ class AnalysisPlanner:
             queries=validated,
             join_plan=join_plan,
             policy_version=POLICY_VERSION,
+            metric_definition=DefinitionReference(
+                definition_type=DefinitionType.METRIC,
+                id=metadata.metric.id,
+                version=metadata.metric.version,
+            ),
+            relationship_definitions=[
+                DefinitionReference(
+                    definition_type=DefinitionType.RELATIONSHIP,
+                    id=item.id,
+                    version=item.version,
+                )
+                for item in metadata.relationships
+            ],
         )
 
     @staticmethod

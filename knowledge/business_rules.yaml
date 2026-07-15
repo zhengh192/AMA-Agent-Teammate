@@ -1,0 +1,54 @@
+schema_version: 1
+kind: business_rule_file
+definitions:
+  - kind: business_rule
+    id: demo.readonly_bounded_results
+    version: 1.0.0
+    status: active
+    name: Demo Read-Only Bounded Results
+    description: Security rule applied to all demo analytical queries.
+    owner: Enterprise Security
+    source: Repository security model
+    effective_from: 2025-01-01
+    effective_to: null
+    last_reviewed_at: 2026-07-15
+    statement: Queries must be read-only and enforce approved time, row, byte, and timeout bounds.
+    expression: SELECT-only query with configured allowlist and runtime caps
+    applies_to: [demo.daily_sales, demo.segment_sales, demo.campaigns]
+    references: []
+    severity: blocking
+    caveats: []
+  - kind: business_rule
+    id: demo.funnel_quality_gate
+    version: 1.0.0
+    status: active
+    name: Funnel Quality Gate
+    description: Quality issues must be reported before interpreting conversion rates.
+    owner: Operations Analytics
+    source: Phase 2 demo quality contract
+    effective_from: 2025-01-01
+    effective_to: null
+    last_reviewed_at: 2026-07-15
+    statement: Null numerator or denominator values and duplicate event IDs must be quantified before rate interpretation.
+    expression: missing_count and duplicate_event_count are reported
+    applies_to: [demo.funnel_events, demo.conversion_rate, demo.funnel_completeness]
+    references: []
+    severity: warning
+    caveats: []
+  - kind: business_rule
+    id: air.case_attribution_window
+    version: 1.0.0
+    status: active
+    name: AIR Case Attribution Window
+    description: Defines when an AIR case can be attributed to a visit.
+    owner: AIR Data Governance
+    source: AIR metric owner approval record
+    effective_from: 2026-01-01
+    effective_to: null
+    last_reviewed_at: 2026-07-15
+    statement: A non-cancelled case is attributable only when its origin visit ID matches and it is created within seven days after the visit.
+    expression: origin_visit_id = visit_id AND case_created_at BETWEEN visited_at AND visited_at + 7 days AND status != cancelled
+    applies_to: [air.visit_log, air.case_log, air.case_conversion_rate, air.visit_to_case]
+    references: []
+    severity: blocking
+    caveats: [Attribution is an operational convention and is not causal evidence.]

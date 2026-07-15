@@ -49,6 +49,21 @@ class AnalysisService:
         user_id = str(state["user_id"])
         question = str(state.get("combined_input", state.get("input_text", "")))
         plan = await self.planner.build(run_id, question)
+        await self.repository.add_audit_event(
+            actor_id=user_id,
+            event_type="semantic_metadata.resolved",
+            status="success",
+            session_id=str(state["session_id"]),
+            run_id=run_id,
+            graph_node="create_analysis_plan",
+            safe_details={
+                "metric_definition_id": plan.metric_definition.id,
+                "metric_definition_version": plan.metric_definition.version,
+                "relationship_definitions": [
+                    item.model_dump(mode="json") for item in plan.relationship_definitions
+                ],
+            },
+        )
         _, approval = await self.analysis_repository.create_plan_with_approval(plan, user_id)
         await self.repository.add_audit_event(
             actor_id=user_id,
@@ -64,6 +79,9 @@ class AnalysisService:
                 "query_count": len(plan.queries),
                 "source_ids": [query.source_id for query in plan.queries],
                 "policy_version": plan.policy_version,
+                "metric_definition_id": plan.metric_definition.id,
+                "metric_definition_version": plan.metric_definition.version,
+                "relationship_definitions": [item.model_dump(mode="json") for item in plan.relationship_definitions],
             },
         )
         return {
@@ -330,6 +348,10 @@ class AnalysisService:
             ],
             "join_plan": plan.join_plan.model_dump() if plan.join_plan else None,
             "policy_version": plan.policy_version,
+            "metric_definition": plan.metric_definition.model_dump(mode="json"),
+            "relationship_definitions": [
+                item.model_dump(mode="json") for item in plan.relationship_definitions
+            ],
         }
 
     async def _require_plan(self, plan_id: str) -> AnalysisPlan:
