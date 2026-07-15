@@ -56,7 +56,7 @@ Terminal 2 — web:
 pnpm --dir apps/web dev
 ```
 
-Open `http://127.0.0.1:5173/` for the conversational Agent and `http://127.0.0.1:5173/admin` for Knowledge, Skill, and Memory administration. Runtime databases and artifacts are written under ignored `var/` paths.
+Open `http://127.0.0.1:5173/` for the conversational Agent. Administration uses `http://127.0.0.1:5173/admin` for the overview, with `/admin/knowledge`, `/admin/skills`, and `/admin/memory` for each governed asset type. Runtime databases and artifacts are written under ignored `var/` paths.
 
 For deterministic demos, set `AMA_PROVIDER=mock`. Azure uses provider boundaries and environment-only configuration; model output and embeddings remain untrusted inputs. Keep `AMA_EMBEDDING_PROVIDER=mock` unless an approved Azure embedding deployment is configured.
 
@@ -70,7 +70,7 @@ For deterministic demos, set `AMA_PROVIDER=mock`. Azure uses provider boundaries
 6. `Analyze conversion rate data completeness, missing and duplicate rows for 2025 from SQL Server.`
 7. `Data query: why is revenue correlated with marketing spend in 2025 using PostgreSQL and MySQL?` — must remain `Inferred`, not causal.
 
-Review the plan and SQL, then choose **Approve and execute**. See `docs/phase-2-implementation.md` for analysis demos and `docs/phase-3-implementation.md` for Knowledge/Skill/Memory workflows and security limitations.
+Review the plan and SQL, then choose **Approve and execute**. See `docs/phase-2-implementation.md` for analysis demos, `docs/phase-3-implementation.md` for Phase 3 workflows and security limitations, and `docs/governed-assets.md` for the Knowledge/Skill/Memory accumulation model.
 
 ## Test
 

@@ -124,7 +124,7 @@ Separate interfaces allow local SQLite/filesystem implementations and later Post
 
 ## Frontend
 
-The web application has two explicit front-office/back-office routes. `/` is the conversational Agent workspace: sessions, streaming responses, status, analysis plan, SQL approval, results, evidence, and trace. It contains no Knowledge, Skill, or Memory maintenance controls. `/admin` is the governance console for source upload, retrieval checks, conflicts, exact proposal approval, lifecycle maintenance, and rollback. Both routes use the same narrow API contracts in the local modular monolith; independent deployment remains an evolution option only when operational measurements justify it. Agent roles stay behind the interface; a development-only debug panel may show routing.
+The web application has two explicit front-office/back-office routes. `/` is the conversational Agent workspace: sessions, streaming responses, status, analysis plan, SQL approval, results, evidence, and trace. It contains no Knowledge, Skill, or Memory maintenance controls. `/admin` is the accumulation overview, with dedicated `/admin/knowledge`, `/admin/skills`, and `/admin/memory` pages for source governance, file-based Skill packages, and structured durable context. Both routes use the same narrow API contracts in the local modular monolith; independent deployment remains an evolution option only when operational measurements justify it. Agent roles stay behind the interface; a development-only debug panel may show routing.
 
 ## Deployment evolution
 

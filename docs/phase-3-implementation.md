@@ -44,12 +44,13 @@ are explicit endpoints and audit events.
 
 Session state remains chat/checkpoint state. Long-term project, user preference, and entity Memory uses a
 proposal with source, exact hash, approval, version, expiry, correction (a new proposal), and explicit
-delection. Secret-like keys/values are rejected. No conversation inference silently updates Memory.
+deletion. Secret-like keys/values are rejected. No conversation inference silently updates Memory.
 
 ## Agent and administration boundary
 
 The front-office Agent runs at `/` and exposes conversation and governed analysis only. Knowledge, Skill,
-and Memory maintenance runs at `/admin`. Explicit natural-language forms in the Agent can create
+and Memory maintenance is separated into /admin/knowledge, /admin/skills, and /admin/memory,
+with /admin as the governed accumulation overview. Explicit natural-language forms in the Agent can create
 `pending_approval` proposals: `knowledge proposal: ...`, `memory: ...`, and teaching phrased as
 `when analyzing ...`. Proposal creation completes the chat run and directs the user to administration.
 No pending or rejected record enters retrieval, Skill context, or Memory context. Exact-hash approval in
@@ -66,10 +67,11 @@ untrusted data even after source approval and can never supply system instructio
    citation. Upload a conflicting active definition and inspect the `Need confirmation` conflict.
 4. In the Agent, teach `When analyzing conversion decline, first check completeness, then Geo, Channel,
    and Intent contribution, and separate confirmed causes from inference.`
-5. In administration, inspect and approve the exact Skill diff. Run a matching analysis and inspect
+5. In /admin/skills, inspect the SKILL.md, metadata.yaml, examples, tests, and exact package diff,
+   then approve it. Run a matching analysis and inspect
    `skill.invoked` in the trace.
 6. Send `memory: Use CNY as the default currency for finance reports.` in the Agent. Approve, reject,
-   edit, expire, or delete it only in administration; inspect `memory.invoked` after approval.
+   edit, expire, or delete it only in `/admin/memory`; inspect `memory.invoked` after approval.
 ## API summary
 
 - `POST /api/documents/upload`, `GET /api/documents`, exact document decision
@@ -77,6 +79,8 @@ untrusted data even after source approval and can never supply system instructio
 - `POST/GET /api/skills/proposals`, exact decision, deprecate, rollback
 - `POST/GET /api/memories/proposals`, exact decision, list, edit proposal, delete
 - `GET /api/providers/embeddings/smoke`
+
+The canonical asset formats and accumulation decision guide are documented in `docs/governed-assets.md`.
 
 ## Security limitations
 
