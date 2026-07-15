@@ -42,7 +42,19 @@ KNOWLEDGE_PATTERN = re.compile(
 SECRET_PATTERN = re.compile(
     r"(?i)(api[_ -]?key|secret|password|token|connection[_ -]?string)\s*[:=]\s*\S+"
 )
-TEACHING_MARKERS = ("以后", "when analyzing", "分析方法", "记住这个方法", "先检查")
+TEACHING_MARKERS = (
+    "\u4ee5\u540e",
+    "when analyzing",
+    "\u5206\u6790\u65b9\u6cd5",
+    "\u8bb0\u4f4f\u8fd9\u4e2a\u65b9\u6cd5",
+    "\u5148\u68c0\u67e5",
+)
+MEMORY_MARKERS = ("\u8bf7\u8bb0\u4f4f", "\u8bb0\u4f4f\uff1a", "\u8bb0\u4f4f:", "memory:")
+KNOWLEDGE_PROPOSAL_MARKERS = (
+    "\u77e5\u8bc6\u63d0\u6848\uff1a",
+    "\u77e5\u8bc6\u63d0\u6848:",
+    "knowledge proposal:",
+)
 
 
 class GovernanceService:
@@ -67,7 +79,10 @@ class GovernanceService:
         data: bytes,
         classification: str,
         source_metadata: dict[str, Any],
+        status: str = "active",
     ) -> dict[str, Any]:
+        if status not in {"active", "pending_approval"}:
+            raise ValueError("Unsupported document lifecycle status.")
         detected = validate_upload(filename, media_type, data, self.settings.ama_upload_max_bytes)
         content_hash = hashlib.sha256(data).hexdigest()
         try:
@@ -104,7 +119,7 @@ class GovernanceService:
                     filename=filename,
                     media_type=detected,
                     classification=classification,
-                    status="active",
+                    status=status,
                     current_version=1,
                     created_at=now,
                 )
@@ -113,7 +128,7 @@ class GovernanceService:
             else:
                 version_number = document.current_version + 1
                 document.current_version = version_number
-                document.status = "active"
+                document.status = status
             version = DocumentVersionRow(
                 id=new_id(),
                 document_id=document.id,
@@ -146,11 +161,12 @@ class GovernanceService:
                 session.add(row)
                 chunk_rows.append(row)
             await session.flush()
-            await self._extract_knowledge(session, version, chunk_rows)
+            if status == "active":
+                await self._extract_knowledge(session, version, chunk_rows)
             await session.commit()
         await self.repository.add_audit_event(
             actor_id=owner_id,
-            event_type="document.ingested",
+            event_type="document.ingested" if status == "active" else "document.proposed",
             status="success",
             input_text=filename,
             safe_details={
@@ -159,13 +175,14 @@ class GovernanceService:
                 "content_hash": content_hash,
                 "chunks": len(chunks),
                 "scan_status": "mock_clean",
+                "document_status": status,
             },
         )
         return {
             "id": document.id,
             "filename": filename,
             "media_type": detected,
-            "status": "active",
+            "status": status,
             "version": version_number,
             "content_hash": content_hash,
             "scan_status": "mock_clean",
@@ -196,6 +213,12 @@ class GovernanceService:
                         KnowledgeChunkRow.document_version_id == version.id
                     )
                 )
+                preview = await session.scalar(
+                    select(KnowledgeChunkRow.content)
+                    .where(KnowledgeChunkRow.document_version_id == version.id)
+                    .order_by(KnowledgeChunkRow.created_at.asc())
+                    .limit(1)
+                )
                 result.append(
                     {
                         "id": document.id,
@@ -208,10 +231,96 @@ class GovernanceService:
                         "parser_status": version.parser_status,
                         "error_code": version.error_code,
                         "chunks": int(count or 0),
+                        "preview": (preview or "")[:800],
+                        "source_metadata": json.loads(version.source_metadata_json),
                         "created_at": document.created_at,
                     }
                 )
             return result
+
+    async def propose_knowledge(self, owner_id: str, content: str) -> dict[str, Any]:
+        proposal_text = content.strip()
+        lowered = proposal_text.lower()
+        for marker in KNOWLEDGE_PROPOSAL_MARKERS:
+            index = lowered.find(marker)
+            if index >= 0:
+                proposal_text = proposal_text[index + len(marker) :].strip()
+                break
+        if len(proposal_text) < 10:
+            raise ValueError("Knowledge proposal must contain a substantive sourced statement.")
+        proposal_hash = hash_text(proposal_text)
+        return await self.ingest(
+            owner_id=owner_id,
+            filename=f"agent-knowledge-{proposal_hash[:12]}.md",
+            media_type="text/markdown",
+            data=("# Agent Knowledge Proposal\n\n" + proposal_text + "\n").encode("utf-8"),
+            classification="internal",
+            source_metadata={
+                "owner": owner_id,
+                "uploader": owner_id,
+                "classification": "internal",
+                "source": "agent_natural_language",
+                "source_text_hash": proposal_hash,
+            },
+            status="pending_approval",
+        )
+
+    async def decide_document(
+        self,
+        owner_id: str,
+        document_id: str,
+        payload_hash: str,
+        decision: str,
+    ) -> dict[str, Any]:
+        async with self.database.sessions() as session:
+            document = await session.get(DocumentRow, document_id)
+            if document is None or document.owner_id != owner_id:
+                raise LookupError("Knowledge document proposal not found.")
+            version = await session.scalar(
+                select(DocumentVersionRow).where(
+                    DocumentVersionRow.document_id == document.id,
+                    DocumentVersionRow.version == document.current_version,
+                )
+            )
+            if version is None:
+                raise LookupError("Knowledge document version not found.")
+            if version.content_hash != payload_hash:
+                raise ValueError("Approval payload hash does not match the document version.")
+            if document.status != "pending_approval":
+                return {
+                    "id": document.id,
+                    "status": document.status,
+                    "content_hash": version.content_hash,
+                    "version": version.version,
+                }
+            document.status = "active" if decision == "approved" else "rejected"
+            if decision == "approved":
+                chunks = (
+                    await session.scalars(
+                        select(KnowledgeChunkRow)
+                        .where(KnowledgeChunkRow.document_version_id == version.id)
+                        .order_by(KnowledgeChunkRow.created_at.asc())
+                    )
+                ).all()
+                await self._extract_knowledge(session, version, list(chunks))
+            await session.commit()
+        await self.repository.add_audit_event(
+            actor_id=owner_id,
+            event_type=f"document.{decision}",
+            status="success",
+            input_text=payload_hash,
+            safe_details={
+                "document_id": document.id,
+                "version": version.version,
+                "content_hash": version.content_hash,
+            },
+        )
+        return {
+            "id": document.id,
+            "status": document.status,
+            "content_hash": version.content_hash,
+            "version": version.version,
+        }
 
     async def answer(self, owner_id: str, question: str, limit: int = 5) -> KnowledgeAnswer:
         query_vector = (await self.embeddings.embed([question]))[0]
@@ -265,7 +374,9 @@ class GovernanceService:
             record_ids = (
                 await session.scalars(
                     select(KnowledgeRecordRow.id).where(
-                        KnowledgeRecordRow.source_chunk_id.in_([item.chunk_id for item in citations])
+                        KnowledgeRecordRow.source_chunk_id.in_(
+                            [item.chunk_id for item in citations]
+                        )
                     )
                 )
             ).all()
@@ -333,7 +444,11 @@ class GovernanceService:
     async def propose_skill(self, owner_id: str, teaching: str) -> dict[str, Any]:
         if not any(marker in teaching.lower() for marker in TEACHING_MARKERS):
             raise ValueError("Teaching request must describe a repeatable future method.")
-        name = "conversion-decline-analysis" if "conversion" in teaching.lower() else "taught-analysis-method"
+        name = (
+            "conversion-decline-analysis"
+            if "conversion" in teaching.lower()
+            else "taught-analysis-method"
+        )
         async with self.database.sessions() as session:
             current = await session.scalar(
                 select(SkillVersionRow)
@@ -341,7 +456,9 @@ class GovernanceService:
                 .order_by(SkillVersionRow.created_at.desc())
             )
             version = _next_semver(current.version if current else None)
-            files = _skill_files(name, version, teaching, owner_id, current.version if current else None)
+            files = _skill_files(
+                name, version, teaching, owner_id, current.version if current else None
+            )
             canonical = json.dumps(files, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
             payload_hash = hash_text(canonical)
             row = SkillProposalRow(
@@ -352,7 +469,9 @@ class GovernanceService:
                 source_text_hash=hash_text(teaching),
                 diff_json=canonical,
                 payload_hash=payload_hash,
-                tool_allowlist_json=json.dumps(["data_completeness", "segment_breakdown", "contribution"]),
+                tool_allowlist_json=json.dumps(
+                    ["data_completeness", "segment_breakdown", "contribution"]
+                ),
                 status="pending_approval",
                 base_version=current.version if current else None,
                 created_at=utc_now(),
@@ -500,7 +619,13 @@ class GovernanceService:
         ):
             raise ValueError("Secrets are not allowed in Memory.")
         canonical = json.dumps(
-            {"scope": scope, "key": key, "value": value, "source": source, "expires_at": _iso(expires_at)},
+            {
+                "scope": scope,
+                "key": key,
+                "value": value,
+                "source": source,
+                "expires_at": _iso(expires_at),
+            },
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),
@@ -827,7 +952,9 @@ def _next_semver(current: str | None) -> str:
 
 def _tokens(text: str) -> list[str]:
     normalized = "".join(character.lower() if character.isalnum() else " " for character in text)
-    return normalized.split() + [character for character in text if "\u4e00" <= character <= "\u9fff"]
+    return normalized.split() + [
+        character for character in text if "\u4e00" <= character <= "\u9fff"
+    ]
 
 
 def _cosine(left: list[float], right: list[float]) -> float:

@@ -1,11 +1,15 @@
 import { expect, test } from "@playwright/test";
 
-
-test("uploads Knowledge and approval-gates a taught Skill", async ({ page }) => {
+test("keeps governance maintenance in /admin", async ({ page }) => {
   await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Knowledge, Skill, and Memory" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Open administration" })).toBeVisible();
+
+  await page.goto("/admin");
+  await expect(page.getByRole("heading", { name: "AMA Governance Console" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Knowledge, Skill, and Memory" })).toBeVisible();
 
-  const filename = `phase3-metric-${Date.now()}.md`;
+  const filename = `governed-metric-${Date.now()}.md`;
   await page.locator('input[type="file"]').setInputFiles({
     name: filename,
     mimeType: "text/markdown",
@@ -17,13 +21,21 @@ test("uploads Knowledge and approval-gates a taught Skill", async ({ page }) => 
   await page.getByRole("button", { name: "Ask", exact: true }).click();
   await expect(page.locator(".knowledge-answer .label")).toHaveText("Confirmed");
   await expect(page.locator(".knowledge-answer summary").filter({ hasText: `${filename} v1` })).toBeVisible();
+});
 
-  const teaching =
-    "以后分析 conversion 下降时，先检查数据完整性，再拆 Geo、Channel 和 Intent，计算各维度的变化贡献，同时区分确定原因和推断。";
-  await page.getByPlaceholder("Teach a repeatable analysis method…").fill(teaching);
-  await page.getByRole("button", { name: "Create proposal" }).click();
-  const proposal = page.locator(".proposal").filter({ hasText: "conversion-decline-analysis" }).first();
-  await expect(proposal).toContainText("pending_approval");
+test("creates a Skill proposal in Agent and approves it in administration", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "+ New session" }).click();
+  await page.getByRole("textbox", { name: "Message" }).fill(
+    "When analyzing conversion decline, first check completeness, then Geo, Channel, and Intent contribution."
+  );
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.getByText(/pending in the admin console/)).toBeVisible();
+  await expect(page.locator(".status")).toHaveText("Completed");
+
+  await page.goto("/admin");
+  const proposal = page.locator(".proposal").filter({ hasText: "conversion-decline-analysis" }).filter({ hasText: "pending_approval" }).first();
+  await expect(proposal).toBeVisible();
   await proposal.getByRole("button", { name: "Approve exact diff" }).click();
-  await expect(proposal).toContainText("active");
+  await expect(page.locator(".proposal").filter({ hasText: "conversion-decline-analysis" }).filter({ hasText: "active" }).first()).toBeVisible();
 });

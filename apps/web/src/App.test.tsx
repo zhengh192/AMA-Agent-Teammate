@@ -2,7 +2,6 @@ import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "./PhaseTwoApp";
 
-
 const session = {
   id: "session-1",
   title: "Test session",
@@ -10,13 +9,10 @@ const session = {
   updated_at: "2026-07-15T00:00:00Z",
 };
 
+describe("Agent workspace", () => {
+  afterEach(() => vi.unstubAllGlobals());
 
-describe("App", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it("loads a session and renders Phase 3 governance controls", async () => {
+  it("renders only the conversational Agent surface", async () => {
     const fetchMock = vi.fn<typeof fetch>(async (input) => {
       const url = String(input);
       if (url.endsWith("/api/sessions")) {
@@ -31,9 +27,8 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: "Test session" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "+ New session" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Message" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "+ File" })).toBeEnabled();
-    expect(screen.getByRole("heading", { name: "Knowledge, Skill, and Memory" })).toBeInTheDocument();
-    expect(screen.getByText("Upload center")).toBeInTheDocument();
-    expect(screen.getByText("Completed")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Knowledge, Skill, and Memory" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "+ File" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open administration" })).toHaveAttribute("href", "/admin");
   });
 });

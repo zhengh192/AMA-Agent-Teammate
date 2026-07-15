@@ -44,22 +44,35 @@ are explicit endpoints and audit events.
 
 Session state remains chat/checkpoint state. Long-term project, user preference, and entity Memory uses a
 proposal with source, exact hash, approval, version, expiry, correction (a new proposal), and explicit
-deletion. Secret-like keys/values are rejected. No conversation inference silently updates Memory.
+delection. Secret-like keys/values are rejected. No conversation inference silently updates Memory.
+
+## Agent and administration boundary
+
+The front-office Agent runs at `/` and exposes conversation and governed analysis only. Knowledge, Skill,
+and Memory maintenance runs at `/admin`. Explicit natural-language forms in the Agent can create
+`pending_approval` proposals: `knowledge proposal: ...`, `memory: ...`, and teaching phrased as
+`when analyzing ...`. Proposal creation completes the chat run and directs the user to administration.
+No pending or rejected record enters retrieval, Skill context, or Memory context. Exact-hash approval in
+administration activates the record, and later invocation is audited. Uploaded/retrieved text remains
+untrusted data even after source approval and can never supply system instructions.
 
 ## Demo workflow
 
-1. Open the Phase 3 governance center and upload a Markdown file containing
-   `Metric: Net Revenue = invoiced revenue less refunds` under a heading.
-2. Ask `How is Net Revenue defined?`; inspect the document version and section citation.
-3. Upload a second definition for the same metric; inspect the conflict and `Need confirmation` answer.
-4. Teach: `以后分析 conversion 下降时，先检查数据完整性，再拆 Geo、Channel 和 Intent，计算各维度的变化贡献，同时区分确定原因和推断。`
-5. Inspect the Skill file diff and allowlist. Before approval it has no runtime effect. Approve the exact
-   diff, run a subsequent analysis, and inspect `skill.invoked` in the trace.
-6. Propose a project Memory, reject or approve it, submit an edit proposal, then expire or delete it.
-
+1. Open the Agent at `/`, create a session, and send
+   `knowledge proposal: Metric: Net Revenue = invoiced revenue less refunds`.
+2. Confirm that the Agent reports `Need confirmation` and completes the chat run. Open `/admin`; the
+   document is `pending_approval`, has a content preview and exact hash, and does not answer retrieval yet.
+3. Approve the exact document in administration, run the retrieval check, and inspect the versioned
+   citation. Upload a conflicting active definition and inspect the `Need confirmation` conflict.
+4. In the Agent, teach `When analyzing conversion decline, first check completeness, then Geo, Channel,
+   and Intent contribution, and separate confirmed causes from inference.`
+5. In administration, inspect and approve the exact Skill diff. Run a matching analysis and inspect
+   `skill.invoked` in the trace.
+6. Send `memory: Use CNY as the default currency for finance reports.` in the Agent. Approve, reject,
+   edit, expire, or delete it only in administration; inspect `memory.invoked` after approval.
 ## API summary
 
-- `POST /api/documents/upload`, `GET /api/documents`
+- `POST /api/documents/upload`, `GET /api/documents`, exact document decision
 - `POST /api/knowledge/ask`, `GET /api/knowledge/conflicts`
 - `POST/GET /api/skills/proposals`, exact decision, deprecate, rollback
 - `POST/GET /api/memories/proposals`, exact decision, list, edit proposal, delete

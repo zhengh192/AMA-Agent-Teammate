@@ -26,6 +26,7 @@
 | A-09 | Phase 2 enables local deterministic demo sources only; no real company database is contacted until approved source, identity, and policy configuration is supplied. | Preserves the security review gate for real data. | Before real database integration |
 | A-10 | Pandas 3 is the controlled dataframe implementation and in-memory DuckDB is the cross-source join engine for Phase 2. | The Phase 2 spike confirmed ecosystem fit and bounded local joins. | Production performance review |
 | A-11 | Phase 3 local retrieval uses authoritative SQLite chunks plus a rebuildable lexical/vector projection; pgvector is the first production candidate and Azure AI Search remains an evaluated alternative. | Avoids a new service while preserving migration-ready governance contracts. | Internal pilot search review |
+| A-12 | The MVP separates the Agent and governance console by route inside the existing web application; physical deployments remain independently separable later. | Meets the front-office/back-office product boundary without introducing premature services or duplicate clients. | Internal pilot deployment review |
 
 ## Blocking questions before Phase 1
 

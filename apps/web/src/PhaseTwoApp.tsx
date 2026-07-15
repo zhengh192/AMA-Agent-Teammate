@@ -2,7 +2,6 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { getAnalysisResult, streamApproval } from "./analysisApi";
 import type { AnalysisResult, ApprovalPayload } from "./analysisTypes";
 import { api, streamChat } from "./api";
-import { GovernanceCenter } from "./GovernanceCenter";
 import { PlotlyFigure } from "./PlotlyFigure";
 import type { ChatMessage, ChatSession, RunStatus, ServerEvent, TraceEvent } from "./types";
 import "./analysis.css";
@@ -196,7 +195,7 @@ export default function PhaseTwoApp() {
       </aside>
 
       <main className="workspace phase-two-workspace">
-        <header className="topbar"><div><h1>{activeSession?.title ?? "AMA Data Analysis Teammate"}</h1><p>Governed chat, analysis, source-cited Knowledge, Skills, and Memory</p></div><span className={`status status-${status}`} aria-live="polite">{statusLabels[status]}</span></header>
+        <header className="topbar"><div><h1>{activeSession?.title ?? "AMA Data Analysis Teammate"}</h1><p>Your conversational Agent for governed questions, analysis, and source-backed answers</p></div><span className={`status status-${status}`} aria-live="polite">{statusLabels[status]}</span></header>
 
         <section className="conversation" aria-label="Conversation">
           {messages.length === 0 && !clarification && !streamText ? <div className="empty-state"><h2>Ask a data question</h2><p>Try: “Query revenue trend for 2025 from the PostgreSQL sales data source.”</p></div> : null}
@@ -210,12 +209,10 @@ export default function PhaseTwoApp() {
 
         {analysisResult && finalDataset ? <section className="analysis-results" aria-label="Analysis results"><div className="result-toolbar"><div><span className="eyebrow">Completed</span><h2>Bounded analysis result</h2></div><a className="download" href={`/api/artifacts/${analysisResult.csv_artifact_id}/download`}>Download CSV</a></div><div className="result-grid"><article className="analysis-card chart-card"><h3>{analysisResult.chart.chart_type.replaceAll("_", " ")}</h3><PlotlyFigure figure={analysisResult.chart.figure} />{analysisResult.chart.fallback_table ? <p className="warning">The requested chart was unsuitable; a table fallback was used.</p> : null}</article><article className="analysis-card evidence-card"><h3>Evidence-linked conclusions</h3>{analysisResult.computation.conclusions.map((item) => <div className="conclusion" key={item.text}><span className={`label label-${item.epistemic_label.toLowerCase().replace(" ", "-")}`}>{item.epistemic_label}</span><p>{item.text}</p><small>Evidence: {item.evidence_ids.join(", ")}</small></div>)}</article></div><article className="analysis-card"><div className="card-heading"><h3>Result table</h3><span>{finalDataset.row_count} rows</span></div><div className="table-scroll"><table><thead><tr>{finalDataset.columns.map((column) => <th key={column}>{column}</th>)}</tr></thead><tbody>{finalDataset.rows.map((row, index) => <tr key={index}>{finalDataset.columns.map((column) => <td key={column}>{String(row[column] ?? "—")}</td>)}</tr>)}</tbody></table></div>{finalDataset.quality.warnings.map((warning) => <p className="warning" key={warning}>{warning}</p>)}</article>{analysisResult.join_quality ? <article className="analysis-card"><h3>Cross-database join quality</h3><pre>{JSON.stringify(analysisResult.join_quality, null, 2)}</pre></article> : null}<article className="analysis-card"><h3>Evidence records</h3><div className="evidence-list">{analysisResult.computation.evidence.map((item) => <details key={item.id}><summary>{item.epistemic_label} · {item.title}</summary><p>{item.calculation}</p><pre>{JSON.stringify(item.support, null, 2)}</pre>{item.limitations.map((limitation) => <p className="warning" key={limitation}>{limitation}</p>)}</details>)}</div></article></section> : null}
 
-        <GovernanceCenter />
-
         <section className="inspection"><details><summary>Plan / trace context</summary><p>Run: {currentRunId ?? "Not started"}</p><p>Flow: clarify → plan → SQL policy → approval → execute → evidence</p></details><details><summary>Trace ({trace.length})</summary>{trace.length === 0 ? <p>No trace events yet.</p> : <ul className="trace-list">{trace.map((item) => <li key={item.id}><code>{item.event_type}</code> · {item.status}</li>)}</ul>}</details></section>
 
-        <form className="composer" onSubmit={(event) => void sendMessage(event)}><button type="button" className="upload" title="Use the Upload center above">+ File</button><textarea aria-label="Message" value={input} onChange={(event) => setInput(event.target.value)} placeholder={clarificationRunId ? "Provide the requested clarification…" : approval ? "Review and decide the SQL plan above…" : "Message AMA Teammate…"} rows={2} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} /><button className="send" type="submit" disabled={!input.trim() || ["executing", "planning", "waiting_approval"].includes(status)}>Send</button></form>
-        <footer>Local demo sources are read-only. Uploaded content is untrusted; durable changes require exact human approval.</footer>
+        <form className="composer agent-composer" onSubmit={(event) => void sendMessage(event)}><textarea aria-label="Message" value={input} onChange={(event) => setInput(event.target.value)} placeholder={clarificationRunId ? "Provide the requested clarification…" : approval ? "Review and decide the SQL plan above…" : "Message AMA Teammate…"} rows={2} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} /><button className="send" type="submit" disabled={!input.trim() || ["executing", "planning", "waiting_approval"].includes(status)}>Send</button></form>
+        <footer>Governed content is maintained separately. <a href="/admin">Open administration</a></footer>
       </main>
     </div>
   );

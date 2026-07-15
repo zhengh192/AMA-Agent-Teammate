@@ -38,7 +38,8 @@ class PhaseTwoChatService(ChatService):
                     session_id=session_id,
                     run_id=run.id,
                     user_id=user_id,
-                    input_text=prepared_content,
+                    input_text=content,
+                    combined_input=prepared_content,
                     status=RunStatus.CREATED.value,
                 )
             )
@@ -48,9 +49,7 @@ class PhaseTwoChatService(ChatService):
             async for item in self._stream_failure(run.id, session_id, user_id, exc):
                 yield item
 
-    async def prepare_input(
-        self, user_id: str, content: str, run_id: str, session_id: str
-    ) -> str:
+    async def prepare_input(self, user_id: str, content: str, run_id: str, session_id: str) -> str:
         del user_id, run_id, session_id
         return content
 

@@ -81,6 +81,21 @@ async def list_documents(
     return await _service(request).list_documents(user.id)
 
 
+@router.post("/documents/{document_id}/decision")
+async def decide_document(
+    document_id: str,
+    payload: ProposalDecision,
+    request: Request,
+    user: DevelopmentUser = Depends(get_current_user),
+) -> dict[str, Any]:
+    try:
+        return await _service(request).decide_document(
+            user.id, document_id, payload.payload_hash, payload.decision
+        )
+    except Exception as exc:
+        raise _safe_error(exc) from exc
+
+
 @router.post("/knowledge/ask")
 async def ask_knowledge(
     payload: KnowledgeQuestion,

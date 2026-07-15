@@ -98,9 +98,7 @@ def test_retrieval_has_precise_citations_and_no_source_is_unknown(client: TestCl
         },
     )
     assert uploaded.status_code == 200
-    answer = client.post(
-        "/api/knowledge/ask", json={"question": "How is Net Revenue defined?"}
-    )
+    answer = client.post("/api/knowledge/ask", json={"question": "How is Net Revenue defined?"})
     assert answer.status_code == 200
     payload = answer.json()
     assert payload["epistemic_label"] == "Confirmed"
@@ -128,9 +126,7 @@ def test_conflicting_definitions_are_surfaced(client: TestClient) -> None:
     conflicts = client.get("/api/knowledge/conflicts")
     assert conflicts.status_code == 200
     assert conflicts.json()[0]["name"] == "Conversion"
-    answer = client.post(
-        "/api/knowledge/ask", json={"question": "What is the Conversion metric?"}
-    )
+    answer = client.post("/api/knowledge/ask", json={"question": "What is the Conversion metric?"})
     assert answer.json()["epistemic_label"] == "Need confirmation"
     assert answer.json()["conflicts"]
 
@@ -207,14 +203,10 @@ def test_skill_proposal_requires_exact_approval_and_is_audited(
     trace = client.get(f"/api/runs/{run_match.group(1)}/trace").json()
     assert any(event["event_type"] == "skill.invoked" for event in trace)
 
-    deprecated = client.post(
-        f"/api/skills/{proposal['name']}/{proposal['version']}/deprecate"
-    )
+    deprecated = client.post(f"/api/skills/{proposal['name']}/{proposal['version']}/deprecate")
     assert deprecated.status_code == 200
     assert client.get("/api/skills/proposals").json()[0]["status"] == "deprecated"
-    rolled_back = client.post(
-        f"/api/skills/{proposal['name']}/{proposal['version']}/rollback"
-    )
+    rolled_back = client.post(f"/api/skills/{proposal['name']}/{proposal['version']}/rollback")
     assert rolled_back.status_code == 200
     assert client.get("/api/skills/proposals").json()[0]["status"] == "active"
 
@@ -312,3 +304,74 @@ def test_office_macro_and_media_type_mismatch_are_rejected(client: TestClient) -
         files={"file": ("notes.txt", b"hello", "application/pdf")},
     )
     assert wrong_type.status_code == 400
+
+
+def test_agent_knowledge_proposal_requires_admin_approval(client: TestClient) -> None:
+    session = client.post("/api/sessions", json={"title": "Agent knowledge proposal"}).json()
+    stream = client.post(
+        f"/api/sessions/{session['id']}/messages/stream",
+        json={
+            "content": (
+                "knowledge proposal: Metric: Activation = activated users divided by eligible users"
+            )
+        },
+    )
+    assert stream.status_code == 200
+    assert "event: knowledge.proposal" in stream.text
+    assert "event: run.completed" in stream.text
+
+    document = client.get("/api/documents").json()[0]
+    assert document["status"] == "pending_approval"
+    assert document["source_metadata"]["source"] == "agent_natural_language"
+    assert "Metric: Activation" in document["preview"]
+
+    before = client.post(
+        "/api/knowledge/ask", json={"question": "How is Activation defined?"}
+    ).json()
+    assert before["epistemic_label"] == "Unknown"
+
+    wrong = client.post(
+        f"/api/documents/{document['id']}/decision",
+        json={"decision": "approved", "payload_hash": "0" * 64},
+    )
+    assert wrong.status_code == 400
+    approved = client.post(
+        f"/api/documents/{document['id']}/decision",
+        json={"decision": "approved", "payload_hash": document["content_hash"]},
+    )
+    assert approved.status_code == 200
+    assert approved.json()["status"] == "active"
+
+    after = client.post(
+        "/api/knowledge/ask", json={"question": "How is Activation defined?"}
+    ).json()
+    assert after["epistemic_label"] == "Confirmed"
+    assert after["citations"][0]["filename"].startswith("agent-knowledge-")
+
+
+def test_agent_memory_proposal_is_inert_until_admin_approval(client: TestClient) -> None:
+    session = client.post("/api/sessions", json={"title": "Agent memory proposal"}).json()
+    proposed = client.post(
+        f"/api/sessions/{session['id']}/messages/stream",
+        json={"content": "memory: Use CNY as the default currency for finance reports."},
+    )
+    assert proposed.status_code == 200
+    assert "event: memory.proposal" in proposed.text
+    assert "event: run.completed" in proposed.text
+    assert client.get("/api/memories").json() == []
+
+    proposal = client.get("/api/memories/proposals").json()[0]
+    approved = client.post(
+        f"/api/memories/proposals/{proposal['id']}/decision",
+        json={"decision": "approved", "payload_hash": proposal["payload_hash"]},
+    )
+    assert approved.status_code == 200
+
+    follow_up = client.post(
+        f"/api/sessions/{session['id']}/messages/stream",
+        json={"content": "Hello after the preference was approved."},
+    )
+    run_match = re.search(r'"run_id":"([^"]+)"', follow_up.text)
+    assert run_match is not None
+    trace = client.get(f"/api/runs/{run_match.group(1)}/trace").json()
+    assert any(event["event_type"] == "memory.invoked" for event in trace)

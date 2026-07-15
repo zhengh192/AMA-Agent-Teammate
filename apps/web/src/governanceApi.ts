@@ -6,6 +6,9 @@ export interface DocumentView {
   scan_status: string;
   parser_status: string;
   chunks: number;
+  content_hash: string;
+  preview: string;
+  source_metadata: Record<string, unknown>;
 }
 
 export interface Citation {
@@ -77,6 +80,13 @@ export const governanceApi = {
     body.append("file", file);
     body.append("classification", "internal");
     return json(await fetch("/api/documents/upload", { method: "POST", body }));
+  },
+  async decideDocument(document: DocumentView, decision: "approved" | "rejected") {
+    return json(await fetch(`/api/documents/${document.id}/decision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision, payload_hash: document.content_hash }),
+    }));
   },
   async ask(question: string): Promise<KnowledgeAnswer> {
     return json(await fetch("/api/knowledge/ask", {

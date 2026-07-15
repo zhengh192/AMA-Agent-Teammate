@@ -1,0 +1,16 @@
+.admin-shell { min-height: 100vh; background: #f4f6f8; color: #243446; }
+.admin-header { display: flex; align-items: start; justify-content: space-between; gap: 24px; padding: 28px max(24px, calc((100vw - 1120px) / 2)); border-bottom: 1px solid #dfe5eb; background: #fff; }
+.admin-header h1 { margin: 0; font-size: 26px; }
+.admin-header p { margin: 8px 0 0; color: #66778a; }
+.admin-header a { flex: none; border: 1px solid #cbd5df; border-radius: 8px; padding: 9px 13px; color: #33495d; text-decoration: none; }
+.admin-main { padding: 24px 0 48px; }
+.admin-main .governance-center { width: min(1080px, calc(100% - 40px)); }
+@media (max-width: 640px) { .admin-header { flex-direction: column; } }
+
+.panel-heading { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
+.panel-heading p { margin: 6px 0 0; color: #66778a; font-size: 12px; }
+.document-list { display: grid; gap: 8px; margin-top: 14px; }
+.document-row { padding: 10px; border: 1px solid #e1e6eb; border-radius: 8px; font-size: 12px; }
+.document-row > p { white-space: pre-wrap; color: #526578; line-height: 1.5; }
+.document-row small { color: #738395; }
+@media (max-width: 560px) { .panel-heading { flex-direction: column; } }

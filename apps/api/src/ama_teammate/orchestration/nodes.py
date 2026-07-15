@@ -78,13 +78,13 @@ def _contains_any(text: str, markers: tuple[str, ...]) -> bool:
 def intake_node(state: AgentState) -> dict[str, Any]:
     return {
         "schema_version": "1",
-        "combined_input": state["input_text"].strip(),
+        "combined_input": state.get("combined_input", state["input_text"]).strip(),
         "status": "planning",
     }
 
 
 def assess_goal_node(state: AgentState) -> dict[str, Any]:
-    text = state["combined_input"].lower()
+    text = state["input_text"].lower()
     if _contains_any(text, KNOWLEDGE_MARKERS):
         route = "knowledge"
         missing = (

@@ -1,8 +1,9 @@
 import { expect, test } from "@playwright/test";
 
-
 test("creates a session and streams a Mock Provider response", async ({ page }) => {
   await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Knowledge, Skill, and Memory" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Open administration" })).toBeVisible();
   await page.getByRole("button", { name: "+ New session" }).click();
   await expect(page.getByRole("heading", { name: "Ask a data question" })).toBeVisible();
   await page.getByRole("textbox", { name: "Message" }).fill("Hello from Playwright");
