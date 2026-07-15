@@ -1,0 +1,10 @@
+{
+  "name": "ama-data-analysis-teammate",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --dir apps/web dev",
+    "test": "pnpm --dir apps/web test",
+    "build": "pnpm --dir apps/web build",
+    "test:e2e": "pnpm --dir apps/web test:e2e"
+  }
+}

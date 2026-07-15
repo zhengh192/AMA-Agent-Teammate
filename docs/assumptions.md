@@ -21,8 +21,11 @@
 | A-04 | Entra ID is the preferred Azure auth mode; API key is development-only. | Reduces long-lived secret exposure. | Phase 1 kickoff |
 | A-05 | All database execution requires approval in development. | Safest usable default. | Admin policy design |
 | A-06 | Query results are ephemeral artifacts with short retention and are not Knowledge by default. | Minimizes sensitive data persistence. | Data governance approval |
-| A-07 | Uploaded files are malware-scanned by a future deployment control; Phase 1 parser work uses local mocks only until that control exists. | Parsing hostile files is a security boundary. | Before real uploads |
+| A-07 | Uploaded files are malware-scanned by a future deployment control; Phase 3 local parsing uses a mock scan contract only until that control exists. | Parsing hostile files is a security boundary. | Before real uploads |
 | A-08 | Background jobs use a database-backed queue abstraction in Phase 4; no broker is selected in Phase 0. | Avoids premature middleware. | Phase 4 design |
+| A-09 | Phase 2 enables local deterministic demo sources only; no real company database is contacted until approved source, identity, and policy configuration is supplied. | Preserves the security review gate for real data. | Before real database integration |
+| A-10 | Pandas 3 is the controlled dataframe implementation and in-memory DuckDB is the cross-source join engine for Phase 2. | The Phase 2 spike confirmed ecosystem fit and bounded local joins. | Production performance review |
+| A-11 | Phase 3 local retrieval uses authoritative SQLite chunks plus a rebuildable lexical/vector projection; pgvector is the first production candidate and Azure AI Search remains an evaluated alternative. | Avoids a new service while preserving migration-ready governance contracts. | Internal pilot search review |
 
 ## Blocking questions before Phase 1
 
@@ -38,8 +41,8 @@ These change architecture or security and require owner confirmation:
 
 ## Required before later phases
 
-- Phase 2: initial approved databases, logical names, schemas/tables/views, denied columns, read-only identities, row/byte/time limits, and representative mock data.
-- Phase 3: Knowledge owner workflow, embedding/search choice, effective-date rules, and deletion/legal-hold requirements.
+- Phase 2 production integration: approved databases, logical names, schemas/tables/views, denied columns, read-only identities, row/byte/time limits, and representative approved data. Local Phase 2 demos do not satisfy this production gate.
+- Phase 3 internal pilot: Knowledge owners, production malware scanning/quarantine, search backend, effective-date authority, classification access, and deletion/legal-hold rules.
 - Phase 4: Jira project/fields, recovery criteria ownership, scheduler/worker infrastructure, and job retention.
 - Phase 5: Teams tenant/app registration, target channels, delivery policy, and approval contract.
 
@@ -49,4 +52,3 @@ These change architecture or security and require owner confirmation:
 - Data volume and cross-source join sizes
 - Corporate dependency allowlist and software composition analysis tooling
 - Disaster recovery targets
-- Whether Azure AI Search or pgvector is preferred in Phase 3

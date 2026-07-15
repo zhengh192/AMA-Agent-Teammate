@@ -2,88 +2,114 @@
 
 > Enterprise data analysis teammate powered by a controlled LangGraph workflow.
 
-AMA Data Analysis Teammate is an internal-facing assistant for natural-language analytics, governed database access, evidence-linked findings, document knowledge, and approval-controlled background work. This repository currently contains the **Phase 0 architecture and repository baseline only**. It does not yet contain a runnable product.
+AMA Data Analysis Teammate is an internal, governed analytics application. **Phase 3 is runnable**:
 
-AMA Data Analysis Teammate 是面向企业内部的数据分析数字同事，目标是通过自然语言接受分析任务，在受控权限下访问数据、生成可追溯结论，并通过人工审批管理有副作用的操作。当前仓库仅完成 **Phase 0：架构与仓库规则**，尚未进入应用实现阶段。
+`React chat -> FastAPI -> typed LangGraph -> governed analysis + document ingestion -> hybrid retrieval/citations -> exact Skill/Memory approval -> SQLite audit`
 
-## Status
+AMA Data Analysis Teammate 是面向企业内部的数据分析数字同事。当前已完成 **Phase 2：数据库、受控分析、表格和图表**；真实公司数据库、Knowledge、Jira、后台任务和外部通知仍保持禁用。
 
-- Phase: `0 - Architecture and repository rules`
-- Runtime decision: LangGraph OSS Python library only
-- Default LLM provider: company Azure OpenAI deployment, configured by environment
-- Default metadata store for local MVP: SQLite behind storage interfaces
-- External writes: prohibited in MVP unless a future phase adds an explicit approval-controlled integration
-- License: proprietary/internal by default; no open-source license has been granted
+## Phase 3 capabilities
 
-## Phase 0 deliverables
+- Phase 1 sessions, persistent chat, SSE streaming, clarification/resume, Azure/Mock providers, checkpoints, and trace
+- Phase 2 read-only SQL, approvals, cross-source joins, controlled analysis, Plotly charts, and evidence
+- PDF/DOCX/XLSX/CSV/TXT/Markdown ingestion with versioned page/sheet/section/row/line citations
+- Mock/Azure embedding abstraction and authorization-filtered hybrid retrieval; no source returns `Unknown`
+- Structured Knowledge conflicts surfaced as `Need confirmation`
+- Git-tracked, versioned Skill proposals with exact-hash approval, allowlists, deprecation, rollback, and invocation audit
+- Versioned Memory proposal, approval, correction, expiry, secret rejection, and deletion lifecycle
+- Named PostgreSQL/MySQL/SQL Server dialect demo sources with read-only handles, allowlists, denied columns, limits, health, and redaction
+- Structured analysis intent plus deterministic metric/table resolution and SQL generation
+- SQLGlot AST validation, exact-payload approval interrupt/resume, bounded execution, and audit
+- Independent source queries plus in-memory DuckDB joins with coercion, duplicate, match, and unmatched metrics
+- Controlled trend, comparison, segment, contribution, funnel/rate, quality, anomaly, calendar hypothesis, and correlation functions
+- Validated Plotly table, KPI, line, bar, stacked bar, scatter, histogram, and heatmap specifications
+- Result table, evidence-linked conclusions, trace, safe errors, and ownership-checked bounded CSV download
 
-The design baseline lives in [`docs/`](docs/):
+No arbitrary model-generated Python is executed. Phase 4 has not started.
 
-- Product boundary and phased delivery
-- System and LangGraph architecture
-- Security, data governance, and data model
-- Knowledge, Skill, and Memory governance
-- Observability and audit requirements
-- Licensing rules and assumptions
-- Development plan and MVP acceptance criteria
+## Prerequisites
 
-## Proposed repository tree
+- Python 3.12 or 3.13
+- `uv`
+- Node.js 22+ and `pnpm` 11+
+- Google Chrome for the configured Playwright project
 
-```text
-.
-├── AGENTS.md
-├── README.md
-├── THIRD_PARTY_NOTICES.md
-├── .env.example
-├── .gitignore
-├── apps/
-│   ├── api/                 # Phase 1 FastAPI application and graph runtime
-│   │   └── src/ama_teammate/
-│   └── web/                 # Phase 1 React/Vite/TypeScript user interface
-├── docs/                    # Architecture and governance source of truth
-├── infra/                   # Local reproducibility; no Kubernetes in MVP
-├── skills/                  # Approved, versioned business Skills
-├── tests/                   # Cross-component and end-to-end tests
-└── var/                     # Runtime-only local data; ignored by Git
+## Install
+
+```powershell
+uv sync
+pnpm install
 ```
 
-## Planned local commands
+## Start locally
 
-These commands are targets for Phase 1 and are not expected to work yet:
+Terminal 1 — API:
 
-```bash
-uv sync
-uv run pytest
+```powershell
+uv run uvicorn ama_teammate.main:app --app-dir apps/api/src --host 127.0.0.1 --port 8000
+```
+
+Terminal 2 — web:
+
+```powershell
+pnpm --dir apps/web dev
+```
+
+Open `http://127.0.0.1:5173`. Runtime databases and artifacts are written under ignored `var/` paths.
+
+For deterministic demos, set `AMA_PROVIDER=mock`. Azure uses provider boundaries and environment-only configuration; model output and embeddings remain untrusted inputs. Keep `AMA_EMBEDDING_PROVIDER=mock` unless an approved Azure embedding deployment is configured.
+
+## Demo prompts
+
+1. `Query revenue trend for 2025 from the PostgreSQL sales data source.`
+2. `Analyze the data.` — must clarify and execute no SQL.
+3. `Run a data query for revenue by channel across PostgreSQL and MySQL for 2025.`
+4. The first prompt produces a line chart.
+5. `Analyze data revenue contribution by segment with a stacked chart for 2025 from PostgreSQL.`
+6. `Analyze conversion rate data completeness, missing and duplicate rows for 2025 from SQL Server.`
+7. `Data query: why is revenue correlated with marketing spend in 2025 using PostgreSQL and MySQL?` — must remain `Inferred`, not causal.
+
+Review the plan and SQL, then choose **Approve and execute**. See `docs/phase-2-implementation.md` for analysis demos and `docs/phase-3-implementation.md` for Knowledge/Skill/Memory workflows and security limitations.
+
+## Test
+
+```powershell
 uv run ruff check .
 uv run mypy apps/api/src
-pnpm --dir apps/web install
+uv run pytest
+pnpm --dir apps/web lint
 pnpm --dir apps/web test
 pnpm --dir apps/web build
+pnpm --dir apps/web test:e2e
 ```
 
-## Configuration
+Playwright starts an isolated Mock Provider environment and does not use local Azure credentials.
 
-Copy `.env.example` to a local `.env` only after Phase 1 introduces runnable services. Never commit `.env`, API keys, database connection strings, tokens, customer data, or exported query results.
+## Azure OpenAI
 
-The Azure model value is a **deployment name**, not a public model ID. Different logical agents can receive different deployment profiles without changing business code.
+Copy `.env.example` to `.env`, set `AMA_PROVIDER=azure`, and provide approved endpoint, API version, deployment, and authentication values. Entra ID is preferred; API key mode is development-only.
 
-## Architecture principles
+```powershell
+Invoke-RestMethod -Method Post http://127.0.0.1:8000/api/provider/smoke
+```
 
-1. Deterministic policy, permission, SQL, evidence, and approval nodes guard model-driven work.
-2. Databases use genuinely read-only identities plus schema/table/column policy enforcement.
-3. Cross-source analysis executes bounded queries independently, then joins limited results in DuckDB.
-4. LangGraph checkpoints are execution state, not the system of record for Knowledge, Skills, Memory, approvals, or audit.
-5. Every material finding is linked to reproducible evidence and labeled `Confirmed`, `Inferred`, `Unknown`, or `Need confirmation`.
-6. Uploaded documents and tool outputs are untrusted input.
-7. No arbitrary model-generated Python runs in the FastAPI process.
+The response never echoes credentials or endpoint configuration.
 
-## Before Phase 1
+## API summary
 
-The blocking decisions are listed in [`docs/assumptions.md`](docs/assumptions.md). Phase 1 must not start until the owner confirms the Azure API/auth configuration, identity model, data classification baseline, retention rules, and initial deployment environment.
+- `GET /api/health`, `GET /api/ready`, `POST /api/provider/smoke`
+- `POST/GET /api/sessions`, messages, SSE chat, clarification resume, and trace
+- `GET /api/data-sources`
+- `POST /api/runs/{run_id}/approval/stream`
+- `GET /api/runs/{run_id}/analysis`
+- `GET /api/artifacts/{artifact_id}/download`
+- `POST /api/documents/upload`, `GET /api/documents`, `POST /api/knowledge/ask`, conflicts
+- Skill and Memory proposal, exact decision, lifecycle, and embedding smoke endpoints
 
-## References
+## Security boundary
 
-- [OpenAI Python SDK](https://github.com/openai/openai-python)
-- [LangGraph overview](https://docs.langchain.com/oss/python/langgraph/overview)
-- [LangGraph persistence](https://docs.langchain.com/oss/python/langgraph/persistence)
-- [LangGraph interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts)
+The included databases are synthetic local SQLite files that emulate PostgreSQL/MySQL/SQL Server dialect policies. They are not real enterprise connectors. Real sources require approved read-only identities, schema/table/column policy, secrets management, classification, retention, and threat-model review.
+
+## License
+
+Private/internal by default. No open-source license is granted and no MIT `LICENSE` is present.

@@ -1,0 +1,26 @@
+.governance-center { width: min(1080px, calc(100% - 40px)); margin: 0 auto 18px; }
+.governance-heading { display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px; }
+.governance-heading h2, .governance-panel h3 { margin: 0; color: #1e2b39; }
+.governance-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.governance-panel { min-width: 0; padding: 16px; border: 1px solid #dfe5eb; border-radius: 12px; background: #fff; box-shadow: 0 8px 24px rgb(30 45 60 / 5%); }
+.governance-panel > p { color: #66778a; font-size: 12px; line-height: 1.5; }
+.governance-wide { grid-column: 1 / -1; }
+.file-picker { display: inline-flex; cursor: pointer; padding: 9px 12px; border-radius: 8px; background: #263b52; color: #fff; font-size: 12px; }
+.file-picker input { display: none; }
+.governance-panel ul { list-style: none; margin: 12px 0 0; padding: 0; }
+.governance-panel li, .memory-row { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid #e7ebef; font-size: 12px; }
+.governance-panel li span, .memory-row small { display: block; color: #738395; }
+.inline-form, .memory-form { display: flex; gap: 8px; margin: 12px 0; }
+.inline-form input, .memory-form input, .governance-panel textarea { min-width: 0; flex: 1; border: 1px solid #ccd6df; border-radius: 8px; padding: 9px 10px; font: inherit; }
+.governance-panel textarea { width: 100%; margin: 12px 0 8px; box-sizing: border-box; resize: vertical; }
+.governance-panel button { border: 1px solid #cbd5df; border-radius: 8px; padding: 8px 11px; background: #fff; color: #33495d; cursor: pointer; }
+.governance-panel button:disabled { opacity: .5; cursor: default; }
+.knowledge-answer { margin-top: 12px; }
+.knowledge-answer > p { white-space: pre-wrap; font-size: 12px; line-height: 1.5; }
+.knowledge-answer details, .proposal { margin-top: 8px; padding: 9px; border: 1px solid #e1e6eb; border-radius: 8px; font-size: 12px; }
+.conflict-box { margin-top: 10px; padding: 10px; border-radius: 8px; background: #fff4d6; color: #76570a; font-size: 12px; }
+.conflict-box p { margin: 6px 0 0; }
+.proposal pre { max-height: 340px; }
+.memory-row { align-items: center; }
+@media (max-width: 850px) { .governance-grid { grid-template-columns: 1fr; } .governance-wide { grid-column: auto; } }
+@media (max-width: 560px) { .inline-form, .memory-form, .memory-row { align-items: stretch; flex-direction: column; } }

@@ -33,6 +33,9 @@ var/
 artifacts/
 uploads/
 
+# Codex local environment
+.codex/
+
 # IDE and OS
 .idea/
 .vscode/

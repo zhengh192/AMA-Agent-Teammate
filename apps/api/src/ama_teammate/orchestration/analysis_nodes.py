@@ -1,0 +1,32 @@
+from __future__ import annotations
+
+from typing import Any
+
+from langgraph.types import interrupt
+
+from ama_teammate.orchestration.state import AgentState
+from ama_teammate.services.analysis import AnalysisService
+
+
+def build_analysis_node_functions(analysis_service: AnalysisService) -> tuple[Any, Any, Any]:
+    async def create_analysis_plan(state: AgentState) -> dict[str, Any]:
+        return await analysis_service.create_plan(dict(state))
+
+    async def sql_approval(state: AgentState) -> dict[str, Any]:
+        payload = await analysis_service.approval_payload(dict(state))
+        decision = interrupt(payload)
+        return await analysis_service.apply_decision(dict(state), decision)
+
+    async def execute_analysis(state: AgentState) -> dict[str, Any]:
+        return await analysis_service.execute(dict(state))
+
+    return create_analysis_plan, sql_approval, execute_analysis
+
+
+def route_after_approval(state: AgentState) -> str:
+    return "execute" if state.get("approval_status") == "approved" else "stop"
+
+
+def stop_analysis_node(state: AgentState) -> dict[str, Any]:
+    del state
+    return {"status": "cancelled"}
