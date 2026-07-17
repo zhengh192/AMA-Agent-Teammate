@@ -12,7 +12,11 @@ from ama_teammate.providers.base import (
     SmokeTestResult,
     StructuredProviderRequest,
 )
-from ama_teammate.providers.structured_mock import analysis_intent_fixture
+from ama_teammate.providers.structured_mock import (
+    analysis_intent_fixture,
+    analysis_narrative_fixture,
+    goal_assessment_fixture,
+)
 
 
 class MockLLMProvider:
@@ -28,9 +32,14 @@ class MockLLMProvider:
         user_text = next(
             (message.content for message in reversed(messages) if message.role == "user"), ""
         )
-        if request.name != "analysis_intent":
+        fixtures = {
+            "analysis_intent": analysis_intent_fixture,
+            "analysis_narrative": analysis_narrative_fixture,
+            "goal_assessment": goal_assessment_fixture,
+        }
+        if request.name not in fixtures:
             raise ValueError(f"Unknown mock structured fixture: {request.name}")
-        return request.schema.model_validate(analysis_intent_fixture(user_text))
+        return request.schema.model_validate(fixtures[request.name](user_text))
 
     async def stream(
         self, messages: Sequence[ProviderMessage], profile: ModelProfile
@@ -38,23 +47,30 @@ class MockLLMProvider:
         user_text = next(
             (message.content for message in reversed(messages) if message.role == "user"), ""
         )
-        lower = user_text.lower()
+        current_text = user_text.rsplit("<current_request>", 1)[-1].split("</current_request>", 1)[
+            0
+        ]
+        lower = current_text.lower()
+        analysis_markers: tuple[str, ...]
+        knowledge_markers: tuple[str, ...]
         analysis_markers = ("data", "database", "query", "sql", "metric", "分析", "数据", "查询")
         knowledge_markers = ("document", "knowledge", "upload", "文档", "知识", "上传")
+        analysis_markers += ("\u5206\u6790", "\u6570\u636e", "\u67e5\u8be2")
+        knowledge_markers += ("\u6587\u6863", "\u77e5\u8bc6", "\u4e0a\u4f20")
         if any(marker in lower for marker in analysis_markers):
             text = (
-                "Unknown: Phase 1 has no database connectors and no query was executed. "
-                "Need confirmation: provide the intended metric, time range, and approved data source; "
-                "database analysis is intentionally postponed to Phase 2."
+                "Unknown: no approved analysis result was supplied to this response path. "
+                "Need confirmation: provide the material metric and time range if they are absent; "
+                "no database query is claimed here."
             )
         elif any(marker in lower for marker in knowledge_markers):
             text = (
-                "Unknown: Phase 1 has no document retrieval pipeline and no file content was read. "
-                "Need confirmation: document ingestion and cited retrieval are intentionally postponed to Phase 3."
+                "Unknown: no approved cited knowledge excerpt was supplied to this response path. "
+                "No document content is claimed here."
             )
         else:
             text = (
-                "Confirmed: the Phase 1 chat foundation is running with the Mock Provider. "
+                "Confirmed: the Agent chat foundation is running with the Mock Provider. "
                 f"I received your message: {user_text.strip()}"
             )
 

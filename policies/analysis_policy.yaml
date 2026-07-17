@@ -1,0 +1,21 @@
+version: 1.0.0
+status: active
+rules:
+  require_approved_semantic_metadata: true
+  require_explicit_skill_plan: true
+  stop_on_failed_prerequisite: true
+  require_clarification_for:
+    - metric
+    - period
+    - grain
+    - comparison_baseline
+    - entity_definition
+  deterministic_calculations_required:
+    - change
+    - contribution
+    - mix_rate_decomposition
+    - funnel
+    - data_quality
+    - cross_source_match_rate
+  generated_python_enabled: false
+  max_skill_context_sections: 6

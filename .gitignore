@@ -32,6 +32,7 @@ var/
 *.duckdb
 artifacts/
 uploads/
+.runtime/
 
 # Codex local environment
 .codex/

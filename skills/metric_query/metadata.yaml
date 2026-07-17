@@ -1,0 +1,28 @@
+id: metric_query
+name: Metric Query
+version: 1.0.0
+status: active
+description: Resolve an approved metric and produce a bounded, approval-gated read-only query.
+owner: Data Analysis Platform
+reviewer: Data Governance
+created_at: 2026-07-15T00:00:00Z
+updated_at: 2026-07-15T00:00:00Z
+effective_from: 2026-07-15
+effective_to: null
+aliases: [metric lookup, KPI query, 指标查询, 查指标]
+trigger_examples:
+  en: [Show revenue, Query conversion rate]
+  zh: [查询收入指标, 看一下转化率]
+analysis_intents: [trend, period_comparison, segment_breakdown, contribution, funnel_rate, anomaly, seasonality, correlation, mix_rate_decomposition, cross_source_reconciliation]
+required_metadata: [metric, dataset, field, relationship, business_rule]
+prerequisite_skills: []
+inputs:
+  - {name: metric_term, type: metric, required: true, description: User metric term or exact approved metric ID.}
+  - {name: period, type: period, required: true, description: Bounded analysis period.}
+outputs:
+  - {name: approved_dataset, type: dataset, description: Bounded rows from an approved read-only query.}
+  - {name: query_evidence, type: evidence, description: Audited SQL and execution reference.}
+required_tools: [semantic_metadata_registry, sql_safety_gateway, read_only_connector]
+deterministic_operations: [metadata_resolution, sql_ast_validation, approval_payload_binding]
+risk_level: high
+approval: {required: true, reason: Database reads require exact SQL approval in development.}

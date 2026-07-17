@@ -1,0 +1,6 @@
+positive:
+  - input: Dataset has nulls and duplicates.
+    expect: [null_rate, duplicate_count, confidence_below_high]
+negative:
+  - input: Empty dataset.
+    expect: [confidence_unusable, dependent_skill_stopped]

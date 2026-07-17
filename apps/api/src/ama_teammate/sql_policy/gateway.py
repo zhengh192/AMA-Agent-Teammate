@@ -56,6 +56,8 @@ class SQLSafetyGateway:
             exp.Max,
             exp.Coalesce,
             exp.Cast,
+            exp.Case,
+            exp.If,
             exp.And,
             exp.Or,
         )
@@ -106,7 +108,7 @@ class SQLSafetyGateway:
             source_id=source.id,
             dialect=source.dialect.value,
             normalized_sql=statement.sql(dialect=source.dialect.value, pretty=False),
-            executable_sql=statement.sql(dialect="sqlite", pretty=False),
+            executable_sql=statement.sql(dialect=source.execution_dialect, pretty=False),
             parameters=proposal.parameters,
             referenced_tables=sorted(table_names),
             referenced_columns=sorted(column_names),

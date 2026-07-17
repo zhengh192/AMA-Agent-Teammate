@@ -15,6 +15,7 @@ from ama_teammate.governance.service import (
     GovernanceService,
 )
 from ama_teammate.services.chat import encode_sse
+from ama_teammate.services.context import select_relevant_skills
 from ama_teammate.services.phase2_chat import PhaseTwoChatService
 
 KNOWLEDGE_QUERY_MARKERS = (
@@ -84,16 +85,10 @@ class PhaseThreeChatService(PhaseTwoChatService):
             yield item
 
     async def prepare_input(self, user_id: str, content: str, run_id: str, session_id: str) -> str:
-        lowered = content.lower()
         contexts: list[str] = []
 
         skills = await self.governance_service.active_skill_context(user_id)
-        applicable_skills = [
-            skill
-            for skill in skills
-            if (skill["name"] == "conversion-decline-analysis" and "conversion" in lowered)
-            or (skill["name"] == "taught-analysis-method" and "analysis" in lowered)
-        ]
+        applicable_skills = select_relevant_skills(content, skills)
         if applicable_skills:
             await self.repository.add_audit_event(
                 actor_id=user_id,
@@ -141,7 +136,7 @@ class PhaseThreeChatService(PhaseTwoChatService):
                 + "\n</approved_memory_context>"
             )
 
-        if any(marker in lowered for marker in KNOWLEDGE_CONTEXT_MARKERS):
+        if content.strip():
             knowledge = await self.governance_service.answer(user_id, content, limit=3)
             if knowledge.citations and knowledge.epistemic_label == "Confirmed":
                 await self.repository.add_audit_event(
@@ -165,7 +160,9 @@ class PhaseThreeChatService(PhaseTwoChatService):
                     + "\n</approved_knowledge_context>"
                 )
 
-        return content if not contexts else content + "\n\n" + "\n\n".join(contexts)
+        if not contexts:
+            return content
+        return "\n\n".join(contexts) + f"\n\n<current_request>\n{content}\n</current_request>"
 
     async def _stream_governance_proposal(
         self,

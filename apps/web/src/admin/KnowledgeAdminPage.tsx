@@ -3,6 +3,7 @@ import {
   governanceApi,
   type DocumentView,
   type KnowledgeAnswer,
+  type LearnedMetricView,
 } from "../governanceApi";
 
 function locationLabel(location: KnowledgeAnswer["citations"][number]["location"]): string {
@@ -18,18 +19,21 @@ function locationLabel(location: KnowledgeAnswer["citations"][number]["location"
 export function KnowledgeAdminPage() {
   const [documents, setDocuments] = useState<DocumentView[]>([]);
   const [conflicts, setConflicts] = useState<Array<{ id: string; name: string; status: string }>>([]);
+  const [learnedMetrics, setLearnedMetrics] = useState<LearnedMetricView[]>([]);
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState<KnowledgeAnswer | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function refresh() {
-    const [nextDocuments, nextConflicts] = await Promise.all([
+    const [nextDocuments, nextConflicts, nextLearnedMetrics] = await Promise.all([
       governanceApi.documents(),
       governanceApi.conflicts(),
+      governanceApi.learnedMetrics(),
     ]);
     setDocuments(nextDocuments);
     setConflicts(nextConflicts);
+    setLearnedMetrics(nextLearnedMetrics);
   }
 
   useEffect(() => { void refresh().catch(() => undefined); }, []);
@@ -82,6 +86,23 @@ export function KnowledgeAdminPage() {
           </div>
         </article>
 
+        <article className="governance-panel governance-wide">
+          <div className="panel-heading">
+            <div><h3>Learned metric definitions</h3><p>Definitions explicitly confirmed in Agent conversations are versioned here and reused before asking again.</p></div>
+            <span className="format-chip">{learnedMetrics.length} active</span>
+          </div>
+          <div className="document-list">
+            {learnedMetrics.length === 0 ? <p>No learned metrics yet. Ask the Agent for an undefined Super Agent metric and teach it the table and fields.</p> : learnedMetrics.map((metric) => (
+              <details className="document-row" key={metric.id}>
+                <summary>{metric.display_name} · v{metric.version} · {metric.status}</summary>
+                <p>{metric.definition.aggregation}({metric.definition.value_field}) from {metric.definition.table}; time field {metric.definition.time_field}</p>
+                <small>Aliases: {metric.aliases.join(", ") || "none"} · Source: {metric.source}</small>
+                {metric.definition.filters.length ? <pre>{JSON.stringify({ filters: metric.definition.filters }, null, 2)}</pre> : null}
+                {metric.definition.numerator_filters.length ? <pre>{JSON.stringify({ numerator: metric.definition.numerator_filters, denominator: metric.definition.denominator_filters }, null, 2)}</pre> : null}
+              </details>
+            ))}
+          </div>
+        </article>
         <article className="governance-panel">
           <h3>Retrieval check</h3>
           <p>Verify what the Agent can support from currently active Knowledge.</p>

@@ -1,0 +1,15 @@
+version: 1.0.0
+status: active
+rules:
+  require_evidence_for_material_findings: true
+  labels:
+    - Confirmed
+    - Inferred
+    - Hypothesis
+    - Unknown
+    - Need confirmation
+  contribution_is_not_causation: true
+  correlation_is_not_causation: true
+  require_alternative_explanations_for_inference: true
+  cap_conclusion_confidence_by_data_confidence: true
+  no_source_behavior: Unknown

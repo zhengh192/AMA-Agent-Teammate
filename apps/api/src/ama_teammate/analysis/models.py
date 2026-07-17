@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
+from ama_teammate.analysis_skills.models import SkillExecutionStep, SkillReference
+from ama_teammate.learned_metrics.models import ControlledMetricSpec
 from ama_teammate.semantic_metadata.models import DefinitionReference
 from ama_teammate.sql_policy.models import ValidatedQuery
 
@@ -19,6 +21,8 @@ class AnalysisKind(StrEnum):
     ANOMALY = "anomaly"
     SEASONALITY = "seasonality"
     CORRELATION = "correlation"
+    MIX_RATE_DECOMPOSITION = "mix_rate_decomposition"
+    CROSS_SOURCE_RECONCILIATION = "cross_source_reconciliation"
 
 
 class ChartKind(StrEnum):
@@ -27,9 +31,12 @@ class ChartKind(StrEnum):
     LINE = "line"
     BAR = "bar"
     STACKED_BAR = "stacked_bar"
+    STACKED_BAR_100 = "stacked_bar_100"
     SCATTER = "scatter"
     HISTOGRAM = "histogram"
     HEATMAP = "heatmap"
+    WATERFALL = "waterfall"
+    FUNNEL = "funnel"
 
 
 class AnalysisIntent(BaseModel):
@@ -42,6 +49,10 @@ class AnalysisIntent(BaseModel):
     chart_type: ChartKind = ChartKind.TABLE
     success_criteria: str
     causal_design: bool = False
+    metadata_confidence: Literal["authoritative", "working_assumption", "learned_definition"] = "authoritative"
+    assumptions: list[str] = Field(default_factory=list, max_length=12)
+    calculation_spec: ControlledMetricSpec | None = None
+    learned_metric_ref: str | None = None
 
 
 class JoinPlan(BaseModel):
@@ -65,6 +76,7 @@ class AnalysisPlan(BaseModel):
     policy_version: str
     metric_definition: DefinitionReference
     relationship_definitions: list[DefinitionReference] = Field(default_factory=list)
+    skill_execution_plan: list[SkillExecutionStep] = Field(default_factory=list)
 
     def approval_payload(self) -> dict[str, Any]:
         return {
@@ -74,6 +86,8 @@ class AnalysisPlan(BaseModel):
             "analysis_type": self.intent.analysis_type.value,
             "metric": self.intent.metric,
             "chart_type": self.intent.chart_type.value,
+            "metadata_confidence": self.intent.metadata_confidence,
+            "assumptions": self.intent.assumptions,
             "queries": [query.approval_payload() for query in self.queries],
             "join_plan": self.join_plan.model_dump() if self.join_plan else None,
             "policy_version": self.policy_version,
@@ -81,7 +95,17 @@ class AnalysisPlan(BaseModel):
             "relationship_definitions": [
                 item.model_dump(mode="json") for item in self.relationship_definitions
             ],
+            "skill_execution_plan": [
+                item.model_dump(mode="json") for item in self.skill_execution_plan
+            ],
         }
+
+
+class DataConfidence(StrEnum):
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+    UNUSABLE = "unusable"
 
 
 class DatasetQuality(BaseModel):
@@ -90,6 +114,14 @@ class DatasetQuality(BaseModel):
     duplicate_rows: int
     duplicate_key_rows: int = 0
     warnings: list[str] = Field(default_factory=list)
+    freshness: str = "unknown"
+    completeness_rate: float = Field(default=1.0, ge=0, le=1)
+    uniqueness_rate: float = Field(default=1.0, ge=0, le=1)
+    volume_anomaly: bool = False
+    schema_consistent: bool = True
+    referential_integrity_rate: float | None = Field(default=None, ge=0, le=1)
+    comparison_period_covered: bool = True
+    confidence: DataConfidence = DataConfidence.HIGH
 
 
 class Dataset(BaseModel):
@@ -101,6 +133,24 @@ class Dataset(BaseModel):
     row_count: int
     result_bytes: int
     quality: DatasetQuality
+
+
+class NarrativeClaim(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: str = Field(min_length=1, max_length=1_000)
+    evidence_ids: list[str] = Field(min_length=1, max_length=10)
+
+
+class AnalysisNarrative(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    executive_summary: str = Field(min_length=1, max_length=1_500)
+    confirmed_findings: list[NarrativeClaim] = Field(default_factory=list, max_length=8)
+    inferred_findings: list[NarrativeClaim] = Field(default_factory=list, max_length=8)
+    unknowns: list[str] = Field(default_factory=list, max_length=8)
+    next_actions: list[str] = Field(default_factory=list, max_length=6)
+    limitations: list[str] = Field(default_factory=list, max_length=8)
 
 
 class JoinQuality(BaseModel):
@@ -160,3 +210,16 @@ class AnalysisResult(BaseModel):
     chart: ChartSpec
     csv_artifact_id: str
     completed_at: str
+    executive_summary: str = ""
+    confirmed_findings: list[Conclusion] = Field(default_factory=list)
+    inferred_findings: list[Conclusion] = Field(default_factory=list)
+    unknowns: list[str] = Field(default_factory=list)
+    recommendations: list[str] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+    evidence: list[EvidenceRecord] = Field(default_factory=list)
+    charts: list[ChartSpec] = Field(default_factory=list)
+    metric_references: list[DefinitionReference] = Field(default_factory=list)
+    data_source_references: list[str] = Field(default_factory=list)
+    executed_query_references: list[str] = Field(default_factory=list)
+    skill_references: list[SkillReference] = Field(default_factory=list)
+    data_confidence: DataConfidence = DataConfidence.HIGH

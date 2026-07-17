@@ -1,0 +1,6 @@
+positive:
+  - input: Segment changes sum to the total.
+    expect: [shares_sum_to_one, zero_reconciliation_gap]
+negative:
+  - input: Contribution proves root cause.
+    expect: [causal_wording_rejected]

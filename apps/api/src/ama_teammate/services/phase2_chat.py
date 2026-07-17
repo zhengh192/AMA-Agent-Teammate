@@ -1,12 +1,23 @@
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
 from typing import Any
 
+from ama_teammate.analysis.models import AnalysisNarrative, NarrativeClaim
 from ama_teammate.domain.models import EpistemicLabel, MessageRole, RunStatus, StreamEvent
 from ama_teammate.orchestration.state import AgentState
+from ama_teammate.providers.base import ProviderMessage, StructuredProviderRequest
 from ama_teammate.services.analysis import AnalysisService
 from ama_teammate.services.chat import ChatService, encode_sse
+from ama_teammate.services.context import build_conversation_context
+
+ANALYSIS_SYNTHESIS_INSTRUCTIONS = """Synthesize an executive analysis narrative from only the
+validated evidence payload supplied by the application. Every finding must cite one or more
+provided evidence IDs. Preserve Confirmed versus Inferred boundaries and never turn correlation
+or a hypothesis into causation. State material unknowns and limitations. Recommend only bounded
+next analytical actions; do not claim they were executed. Return conclusions, not chain-of-thought.
+"""
 
 
 class PhaseTwoChatService(ChatService):
@@ -32,6 +43,27 @@ class PhaseTwoChatService(ChatService):
         try:
             await self.repository.update_run(run.id, RunStatus.PLANNING)
             prepared_content = await self.prepare_input(user_id, content, run.id, session_id)
+            if "<current_request>" not in prepared_content:
+                prepared_content = f"<current_request>\n{prepared_content}\n</current_request>"
+            history = build_conversation_context(
+                await self.repository.list_messages(session_id),
+                current_run_id=run.id,
+                max_messages=self.settings.ama_conversation_history_max_messages,
+                max_characters=self.settings.ama_conversation_history_max_characters,
+            )
+            if history.message_count:
+                prepared_content = f"{history.text}\n\n{prepared_content}"
+                await self.repository.add_audit_event(
+                    actor_id=user_id,
+                    event_type="conversation.context.assembled",
+                    status="success",
+                    session_id=session_id,
+                    run_id=run.id,
+                    safe_details={
+                        "message_count": history.message_count,
+                        "character_count": history.character_count,
+                    },
+                )
             result = await self.graph.start(
                 AgentState(
                     schema_version="2",
@@ -195,16 +227,22 @@ class PhaseTwoChatService(ChatService):
         result: Any,
     ) -> AsyncIterator[str]:
         conclusions = result.computation.conclusions
-        assistant_text = "\n".join(
-            f"{item.epistemic_label}: {item.text} [Evidence: {', '.join(item.evidence_ids)}]"
-            for item in conclusions
-        )
         label = (
             EpistemicLabel.INFERRED
             if any(item.epistemic_label == EpistemicLabel.INFERRED.value for item in conclusions)
             else EpistemicLabel.CONFIRMED
         )
         messages = await self.repository.list_messages(session_id)
+        question = next(
+            (
+                str(message.content)
+                for message in messages
+                if message.run_id == run_id and message.role == MessageRole.USER.value
+            ),
+            "",
+        )
+        narrative, synthesized = await self._create_analysis_narrative(result, question)
+        assistant_text = self._render_analysis_narrative(narrative)
         if not any(
             message.run_id == run_id and message.role == MessageRole.ASSISTANT.value
             for message in messages
@@ -219,6 +257,19 @@ class PhaseTwoChatService(ChatService):
         await self.repository.update_run(run_id, RunStatus.COMPLETED, route="analysis")
         await self.repository.add_audit_event(
             actor_id=user_id,
+            event_type=(
+                "analysis.synthesis.completed" if synthesized else "analysis.synthesis.fallback"
+            ),
+            status="success",
+            session_id=session_id,
+            run_id=run_id,
+            safe_details={
+                "result_id": result.id,
+                "evidence_ids": [item.id for item in self._result_evidence(result)],
+            },
+        )
+        await self.repository.add_audit_event(
+            actor_id=user_id,
             event_type="run.completed",
             status="success",
             session_id=session_id,
@@ -229,9 +280,13 @@ class PhaseTwoChatService(ChatService):
                 "epistemic_label": label.value,
             },
         )
-        yield encode_sse(
-            StreamEvent(event="message.delta", data={"run_id": run_id, "delta": assistant_text})
-        )
+        for index in range(0, len(assistant_text), 120):
+            yield encode_sse(
+                StreamEvent(
+                    event="message.delta",
+                    data={"run_id": run_id, "delta": assistant_text[index : index + 120]},
+                )
+            )
         yield encode_sse(StreamEvent(event="analysis.result", data=result.model_dump(mode="json")))
         yield encode_sse(
             StreamEvent(
@@ -245,3 +300,122 @@ class PhaseTwoChatService(ChatService):
             )
         )
         yield encode_sse(StreamEvent(event="stream.end", data={"run_id": run_id}))
+
+    async def _create_analysis_narrative(
+        self, result: Any, question: str
+    ) -> tuple[AnalysisNarrative, bool]:
+        fallback = self._fallback_analysis_narrative(result)
+        if (
+            not self.settings.ama_analysis_synthesis
+            or "super_agent_uat" in result.data_source_references
+        ):
+            return fallback, False
+        evidence = self._result_evidence(result)
+        payload = {
+            "question": question[:2_000],
+            "executive_summary": result.executive_summary,
+            "conclusions": [
+                item.model_dump(mode="json") for item in result.computation.conclusions
+            ],
+            "evidence": [
+                {
+                    "id": item.id,
+                    "title": item.title,
+                    "epistemic_label": item.epistemic_label,
+                    "confidence": item.confidence,
+                    "limitations": item.limitations,
+                }
+                for item in evidence
+            ],
+            "data_quality": [
+                {"dataset_id": dataset.id, **dataset.quality.model_dump(mode="json")}
+                for dataset in result.datasets
+            ],
+            "join_quality": (
+                result.join_quality.model_dump(mode="json") if result.join_quality else None
+            ),
+            "unknowns": result.unknowns,
+            "recommendations": result.recommendations,
+            "limitations": result.limitations,
+            "metric_references": [
+                item.model_dump(mode="json") for item in result.metric_references
+            ],
+            "skill_references": [item.model_dump(mode="json") for item in result.skill_references],
+        }
+        try:
+            response = await self.providers.provider.generate_structured(
+                [
+                    ProviderMessage(role="developer", content=ANALYSIS_SYNTHESIS_INSTRUCTIONS),
+                    ProviderMessage(
+                        role="user",
+                        content=json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+                    ),
+                ],
+                self.providers.analyst,
+                StructuredProviderRequest(name="analysis_narrative", schema=AnalysisNarrative),
+            )
+            if not isinstance(response, AnalysisNarrative):
+                raise TypeError("Provider returned an invalid analysis narrative")
+            self._validate_narrative_evidence(response, {item.id for item in evidence})
+            return response, True
+        except Exception:
+            return fallback, False
+
+    @staticmethod
+    def _result_evidence(result: Any) -> list[Any]:
+        return list(result.evidence or result.computation.evidence)
+
+    @staticmethod
+    def _fallback_analysis_narrative(result: Any) -> AnalysisNarrative:
+        confirmed: list[NarrativeClaim] = []
+        inferred: list[NarrativeClaim] = []
+        for conclusion in result.computation.conclusions:
+            if not conclusion.evidence_ids:
+                continue
+            claim = NarrativeClaim(text=conclusion.text, evidence_ids=list(conclusion.evidence_ids))
+            if conclusion.epistemic_label == EpistemicLabel.INFERRED.value:
+                inferred.append(claim)
+            else:
+                confirmed.append(claim)
+        return AnalysisNarrative(
+            executive_summary=result.executive_summary
+            or "The approved analysis completed with evidence-linked results.",
+            confirmed_findings=confirmed,
+            inferred_findings=inferred,
+            unknowns=list(result.unknowns),
+            next_actions=list(result.recommendations),
+            limitations=list(result.limitations),
+        )
+
+    @staticmethod
+    def _validate_narrative_evidence(
+        narrative: AnalysisNarrative, allowed_evidence_ids: set[str]
+    ) -> None:
+        claims = [*narrative.confirmed_findings, *narrative.inferred_findings]
+        for claim in claims:
+            if not set(claim.evidence_ids).issubset(allowed_evidence_ids):
+                raise ValueError("Analysis narrative cited unknown evidence")
+
+    @staticmethod
+    def _render_analysis_narrative(narrative: AnalysisNarrative) -> str:
+        lines = [f"Summary: {narrative.executive_summary}"]
+        sections = (
+            ("Confirmed", narrative.confirmed_findings),
+            ("Inferred", narrative.inferred_findings),
+        )
+        for heading, claims in sections:
+            if claims:
+                lines.append(f"\n{heading}:")
+                lines.extend(
+                    f"- {claim.text} [Evidence: {', '.join(claim.evidence_ids)}]"
+                    for claim in claims
+                )
+        for heading, values in (
+            ("Unknown", narrative.unknowns),
+            ("Next actions", narrative.next_actions),
+            ("Limitations", narrative.limitations),
+        ):
+            if values:
+                lines.append(f"\n{heading}:")
+                lines.extend(f"- {value}" for value in values)
+        return "\n".join(lines)

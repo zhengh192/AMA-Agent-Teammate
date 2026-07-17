@@ -1,0 +1,26 @@
+id: data_quality_check
+name: Data Quality Check
+version: 1.0.0
+status: active
+description: Assess analytical input quality and return a confidence level before interpretation.
+owner: Data Analysis Platform
+reviewer: Data Governance
+created_at: 2026-07-15T00:00:00Z
+updated_at: 2026-07-15T00:00:00Z
+effective_from: 2026-07-15
+effective_to: null
+aliases: [data validation, completeness check, 数据质量, 完整性检查]
+trigger_examples:
+  en: [Check data completeness, Is this dataset trustworthy]
+  zh: [检查数据完整性, 这份数据可靠吗]
+analysis_intents: [quality, trend, period_comparison, contribution, funnel_rate, anomaly, correlation, mix_rate_decomposition, cross_source_reconciliation]
+required_metadata: [dataset, field, relationship]
+prerequisite_skills: [metric_query]
+inputs:
+  - {name: dataset, type: dataset, required: true, description: Bounded approved dataset.}
+outputs:
+  - {name: quality_report, type: quality_report, description: "Freshness, completeness, uniqueness, volume, schema, integrity, and period coverage."}
+required_tools: [controlled_analysis_library]
+deterministic_operations: [freshness_check, null_rate, duplicate_check, volume_check, schema_check, referential_integrity, period_coverage]
+risk_level: low
+approval: {required: false, reason: null}

@@ -78,7 +78,6 @@ def test_ambiguous_analysis_interrupts_and_resumes(client: TestClient) -> None:
     assert set(clarification["missing_fields"]) == {
         "metric definition",
         "time range and timezone",
-        "approved data source",
     }
     assert not any(name == "message.delta" for name, _ in events)
 

@@ -14,6 +14,8 @@ from ama_teammate.data_access.models import QueryExecutionFailure, QueryExecutio
 from ama_teammate.data_access.registry import ConnectorRegistry
 from ama_teammate.domain.models import ApprovalStatus, new_id, utc_now
 from ama_teammate.evidence.validator import EvidenceValidator
+from ama_teammate.learned_metrics.models import LearnedMetricDefinition
+from ama_teammate.learned_metrics.service import LearnedMetricService
 from ama_teammate.storage.analysis_repository import AnalysisRepository
 from ama_teammate.storage.repositories import Repository, hash_text
 
@@ -25,6 +27,7 @@ class AnalysisService:
         planner: AnalysisPlanner,
         registry: ConnectorRegistry,
         analysis_repository: AnalysisRepository,
+        learned_metrics: LearnedMetricService,
         repository: Repository,
         joiner: BoundedDuckDBJoiner,
         engine: ControlledAnalysisEngine,
@@ -36,6 +39,7 @@ class AnalysisService:
         self.planner = planner
         self.registry = registry
         self.analysis_repository = analysis_repository
+        self.learned_metrics = learned_metrics
         self.repository = repository
         self.joiner = joiner
         self.engine = engine
@@ -47,8 +51,11 @@ class AnalysisService:
     async def create_plan(self, state: dict[str, Any]) -> dict[str, Any]:
         run_id = str(state["run_id"])
         user_id = str(state["user_id"])
-        question = str(state.get("combined_input", state.get("input_text", "")))
-        plan = await self.planner.build(run_id, question)
+        question = str(state.get("analysis_question", state.get("input_text", "")))
+        context = str(state.get("combined_input", ""))
+        plan = await self.planner.build(
+            run_id, question, context=context, owner_id=user_id
+        )
         await self.repository.add_audit_event(
             actor_id=user_id,
             event_type="semantic_metadata.resolved",
@@ -61,6 +68,9 @@ class AnalysisService:
                 "metric_definition_version": plan.metric_definition.version,
                 "relationship_definitions": [
                     item.model_dump(mode="json") for item in plan.relationship_definitions
+                ],
+                "skill_execution_plan": [
+                    item.model_dump(mode="json") for item in plan.skill_execution_plan
                 ],
             },
         )
@@ -81,16 +91,52 @@ class AnalysisService:
                 "policy_version": plan.policy_version,
                 "metric_definition_id": plan.metric_definition.id,
                 "metric_definition_version": plan.metric_definition.version,
-                "relationship_definitions": [item.model_dump(mode="json") for item in plan.relationship_definitions],
+                "relationship_definitions": [
+                    item.model_dump(mode="json") for item in plan.relationship_definitions
+                ],
+                "skill_execution_plan": [
+                    item.model_dump(mode="json") for item in plan.skill_execution_plan
+                ],
             },
         )
         return {
             "plan_ref": plan.id,
             "query_proposal_refs": [query.proposal_id for query in plan.queries],
             "pending_approval_ref": approval.id,
+            "selected_skill_refs": [
+                item.skill.model_dump(mode="json") for item in plan.skill_execution_plan
+            ],
             "status": "waiting_approval",
         }
 
+    async def learn_metric_from_clarification(
+        self,
+        state: dict[str, Any],
+        *,
+        metric_name: str,
+        original_question: str,
+        clarification: str,
+    ) -> LearnedMetricDefinition:
+        return await self.learned_metrics.learn_from_clarification(
+            owner_id=str(state["user_id"]),
+            metric_name=metric_name,
+            original_question=original_question,
+            clarification=clarification,
+            session_id=str(state["session_id"]),
+            run_id=str(state["run_id"]),
+        )
+
+    async def list_learned_metrics(self, owner_id: str) -> list[LearnedMetricDefinition]:
+        return await self.learned_metrics.list_active(owner_id)
+    async def get_learned_metric(
+        self, owner_id: str, definition_id: str
+    ) -> LearnedMetricDefinition | None:
+        return await self.learned_metrics.get(owner_id, definition_id)
+
+    async def search_learned_metrics(
+        self, owner_id: str, query: str
+    ) -> list[LearnedMetricDefinition]:
+        return await self.learned_metrics.search(owner_id, query)
     async def approval_payload(self, state: dict[str, Any]) -> dict[str, Any]:
         plan = await self._require_plan(str(state["plan_ref"]))
         approval = await self.analysis_repository.get_approval(str(state["pending_approval_ref"]))
@@ -247,6 +293,25 @@ class AnalysisService:
         self.evidence_validator.validate(computation)
         await self.analysis_repository.add_evidence(plan.run_id, computation.evidence)
         chart = self.chart_builder.build(plan.intent, final_dataset, computation)
+        confirmed_findings = [
+            item for item in computation.conclusions if item.epistemic_label == "Confirmed"
+        ]
+        inferred_findings = [
+            item for item in computation.conclusions if item.epistemic_label == "Inferred"
+        ]
+        unknowns = [
+            item.text for item in computation.conclusions if item.epistemic_label == "Unknown"
+        ]
+        limitations = sorted(
+            {limitation for item in computation.evidence for limitation in item.limitations}
+        )
+        confidence = final_dataset.quality.confidence
+        recommendations = (
+            ["Resolve data-quality limitations before relying on this analysis."]
+            if confidence.value in {"low", "unusable"}
+            else ["Use the linked evidence and approved definitions for follow-up decisions."]
+        )
+        executive_summary = f"Completed {plan.intent.analysis_type.value} analysis with {confidence.value} data confidence."
 
         csv_id, csv_path, csv_hash = self.csv_writer.write(plan.run_id, final_dataset)
         await self.analysis_repository.add_artifact(
@@ -267,6 +332,19 @@ class AnalysisService:
             chart=chart,
             csv_artifact_id=csv_id,
             completed_at=utc_now().isoformat(),
+            executive_summary=executive_summary,
+            confirmed_findings=confirmed_findings,
+            inferred_findings=inferred_findings,
+            unknowns=unknowns,
+            recommendations=recommendations,
+            limitations=limitations,
+            evidence=computation.evidence,
+            charts=[chart],
+            metric_references=[plan.metric_definition],
+            data_source_references=sorted({query.source_id for query in plan.queries}),
+            executed_query_references=[query.proposal_id for query in plan.queries],
+            skill_references=[item.skill for item in plan.skill_execution_plan],
+            data_confidence=confidence,
         )
         result_artifact_id, result_path, result_hash = self.json_store.write_result(result)
         await self.analysis_repository.add_artifact(
@@ -289,6 +367,10 @@ class AnalysisService:
                 "dataset_id": final_dataset.id,
                 "evidence_ids": [item.id for item in computation.evidence],
                 "chart_type": chart.chart_type.value,
+                "data_confidence": confidence.value,
+                "skill_references": [
+                    item.skill.model_dump(mode="json") for item in plan.skill_execution_plan
+                ],
             },
         )
         return {
@@ -332,6 +414,8 @@ class AnalysisService:
             "dimensions": plan.intent.dimensions,
             "chart_type": plan.intent.chart_type.value,
             "success_criteria": plan.intent.success_criteria,
+            "metadata_confidence": plan.intent.metadata_confidence,
+            "assumptions": plan.intent.assumptions,
             "queries": [
                 {
                     "id": query.proposal_id,
@@ -351,6 +435,9 @@ class AnalysisService:
             "metric_definition": plan.metric_definition.model_dump(mode="json"),
             "relationship_definitions": [
                 item.model_dump(mode="json") for item in plan.relationship_definitions
+            ],
+            "skill_execution_plan": [
+                item.model_dump(mode="json") for item in plan.skill_execution_plan
             ],
         }
 

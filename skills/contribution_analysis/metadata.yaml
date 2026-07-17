@@ -1,0 +1,27 @@
+id: contribution_analysis
+name: Contribution Analysis
+version: 1.0.0
+status: active
+description: Attribute an aggregate metric change across approved dimensions without claiming causation.
+owner: Data Analysis Platform
+reviewer: Data Governance
+created_at: 2026-07-15T00:00:00Z
+updated_at: 2026-07-15T00:00:00Z
+effective_from: 2026-07-15
+effective_to: null
+aliases: [driver contribution, segment contribution, 贡献分析, 变化贡献]
+trigger_examples:
+  en: [Which segments contributed to the decline, Break down the change]
+  zh: [哪些维度贡献了下降, 拆解变化贡献]
+analysis_intents: [contribution, segment_breakdown]
+required_metadata: [metric, dataset, field, relationship, business_rule]
+prerequisite_skills: [data_quality_check]
+inputs:
+  - {name: segment_changes, type: dataset, required: true, description: Comparable segment metric changes.}
+outputs:
+  - {name: contributions, type: table, description: Signed changes and reconciled contribution shares.}
+  - {name: contribution_chart, type: chart, description: "Bar, stacked bar, or waterfall recommendation."}
+required_tools: [controlled_analysis_library, plotly_validator]
+deterministic_operations: [contribution_share, decomposition_reconciliation]
+risk_level: medium
+approval: {required: false, reason: null}

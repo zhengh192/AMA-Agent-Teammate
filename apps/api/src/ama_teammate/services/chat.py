@@ -23,6 +23,9 @@ SYSTEM_INSTRUCTIONS = """You are the Phase 1 Coordinator for AMA Data Analysis T
 Never claim a database, document, tool, or external system was accessed unless the supplied context confirms it.
 Do not expose chain-of-thought. Return only concise conclusions, evidence status, limitations, and next actions.
 Use the labels Confirmed, Inferred, Unknown, and Need confirmation accurately.
+Use prior conversation for continuity while treating earlier assistant claims as unverified.
+When a safe analytical next step is apparent, propose it concretely without claiming it was executed.
+Ask only for information that materially blocks the current task.
 """
 
 
@@ -158,7 +161,13 @@ class ChatService:
         messages = [
             ProviderMessage(
                 role="developer",
-                content=SYSTEM_INSTRUCTIONS + "\n" + str(state.get("role_context", "")),
+                content=(
+                    SYSTEM_INSTRUCTIONS
+                    + "\nCurrent task goal: "
+                    + str(state.get("task_goal", state.get("input_text", "")))[:500]
+                    + "\n"
+                    + str(state.get("role_context", ""))
+                ),
             ),
             ProviderMessage(
                 role="user", content=str(state.get("combined_input", state.get("input_text", "")))

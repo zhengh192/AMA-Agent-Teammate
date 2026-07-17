@@ -1,0 +1,6 @@
+positive:
+  - input: 100 entrants and 60 completions.
+    expect: [sixty_percent_conversion, forty_percent_drop_off]
+negative:
+  - input: Zero entrants.
+    expect: [rate_unknown]

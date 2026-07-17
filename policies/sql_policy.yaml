@@ -1,0 +1,11 @@
+version: 1.0.0
+status: active
+rules:
+  read_only: true
+  require_ast_validation: true
+  require_active_metric_definition: true
+  require_schema_consistency: true
+  development_approval: true
+  syntax_repair_attempts: 1
+  require_new_approval_after_sql_change: true
+  audit_actual_sql_and_parameters: true

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -34,6 +34,7 @@ class DataSourceConfig(BaseModel):
     display_name: str
     dialect: DatabaseDialect
     secret_ref: str
+    execution_dialect: Literal["sqlite", "postgres", "mysql", "tsql"] = "sqlite"
     read_only: bool = True
     allowed_schemas: set[str] = Field(default_factory=lambda: {"main"})
     tables: dict[str, TableCatalog]

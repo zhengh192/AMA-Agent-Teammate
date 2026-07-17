@@ -28,6 +28,48 @@ export interface Citation {
   score: number;
 }
 
+export interface AnalysisSkillView {
+  id: string;
+  name: string;
+  version: string;
+  status: "draft" | "active" | "deprecated";
+  description: string;
+  owner: string;
+  analysis_intents: string[];
+  required_metadata: string[];
+  prerequisite_skills: string[];
+  required_tools: string[];
+  deterministic_operations: string[];
+  risk_level: "low" | "medium" | "high";
+  approval: {
+    required: boolean;
+    reason?: string | null;
+  };
+  path: string;
+}
+
+export interface LearnedMetricView {
+  id: string;
+  metric_key: string;
+  display_name: string;
+  aliases: string[];
+  version: number;
+  status: "active" | "superseded" | "deleted";
+  source: string;
+  created_at: string | null;
+  definition: {
+    source_id: string;
+    table: string;
+    aggregation: string;
+    value_field: string;
+    time_field: string;
+    filters: Array<{ field: string; operator: string; value: unknown }>;
+    numerator_filters: Array<{ field: string; operator: string; value: unknown }>;
+    denominator_filters: Array<{ field: string; operator: string; value: unknown }>;
+    dimensions: string[];
+    caveats: string[];
+  };
+}
 export interface KnowledgeAnswer {
   answer: string;
   epistemic_label: "Confirmed" | "Unknown" | "Need confirmation";
@@ -97,6 +139,12 @@ export const governanceApi = {
   },
   async conflicts(): Promise<Array<{ id: string; kind: string; name: string; status: string }>> {
     return json(await fetch("/api/knowledge/conflicts"));
+  },
+  async learnedMetrics(query?: string): Promise<LearnedMetricView[]> {
+    const suffix = query ? `?q=${encodeURIComponent(query)}` : "";
+    return json(await fetch(`/api/learned-metrics${suffix}`));
+  },  async analysisSkills(): Promise<AnalysisSkillView[]> {
+    return json(await fetch("/api/analysis-skills"));
   },
   async skillProposals(): Promise<SkillProposal[]> {
     return json(await fetch("/api/skills/proposals"));

@@ -1,0 +1,6 @@
+positive:
+  - input: Three of four left keys match.
+    expect: [seventy_five_percent_match_rate]
+negative:
+  - input: Right join key is duplicated.
+    expect: [duplication_warning, automatic_join_blocked]

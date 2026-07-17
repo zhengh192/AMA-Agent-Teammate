@@ -1,0 +1,27 @@
+id: funnel_analysis
+name: Funnel Analysis
+version: 1.0.0
+status: active
+description: Calculate stage conversion and drop-off for a consistently defined bounded funnel.
+owner: Data Analysis Platform
+reviewer: Data Governance
+created_at: 2026-07-15T00:00:00Z
+updated_at: 2026-07-15T00:00:00Z
+effective_from: 2026-07-15
+effective_to: null
+aliases: [conversion funnel, drop-off, 漏斗分析, 流失率]
+trigger_examples:
+  en: [Show funnel conversion, Where is the largest drop-off]
+  zh: [查看漏斗转化, 哪一步流失最多]
+analysis_intents: [funnel_rate]
+required_metadata: [metric, dataset, field, business_rule]
+prerequisite_skills: [data_quality_check]
+inputs:
+  - {name: stage_counts, type: dataset, required: true, description: Ordered stage populations under one entity definition.}
+outputs:
+  - {name: funnel_rates, type: table, description: Stage conversion and drop-off counts and rates.}
+  - {name: funnel_chart, type: chart, description: Funnel chart recommendation when useful.}
+required_tools: [controlled_analysis_library, plotly_validator]
+deterministic_operations: [funnel_conversion, funnel_drop_off, small_sample_warning]
+risk_level: medium
+approval: {required: false, reason: null}

@@ -1,4 +1,4 @@
-.phase-two-workspace { grid-template-rows: auto auto auto auto auto; }
+.phase-two-workspace { grid-template-rows: auto minmax(0, 1fr) auto auto auto; }
 .analysis-card, .analysis-results { width: min(1080px, calc(100% - 40px)); margin: 0 auto 18px; }
 .analysis-card { background: #fff; border: 1px solid #dfe5eb; border-radius: 12px; padding: 18px; box-shadow: 0 8px 24px rgb(30 45 60 / 5%); }
 .analysis-card h2, .analysis-card h3, .analysis-results h2 { margin: 0; color: #1e2b39; }
@@ -37,3 +37,13 @@ th { position: sticky; top: 0; background: #f2f5f7; color: #4c5e70; }
 .error-banner p { margin: 5px 0 0; }
 @media (max-width: 850px) { .plan-grid { grid-template-columns: 1fr 1fr; } .result-grid { grid-template-columns: 1fr; } }
 @media (max-width: 560px) { .plan-grid { grid-template-columns: 1fr; } .sql-review > div, .result-toolbar { display: block; } .download { display: inline-block; margin-top: 10px; } }
+.assumption-panel {
+  margin: 14px 0;
+  border: 1px solid #e6c86a;
+  border-radius: 10px;
+  background: #fff9df;
+  color: #5f4a12;
+  padding: 12px 14px;
+}
+.assumption-panel p { margin: 6px 0; }
+.assumption-panel ul { margin: 6px 0 0; padding-left: 20px; }

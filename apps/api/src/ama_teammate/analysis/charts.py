@@ -6,6 +6,7 @@ from typing import Any
 from ama_teammate.analysis.models import (
     AnalysisComputation,
     AnalysisIntent,
+    AnalysisKind,
     ChartKind,
     ChartSpec,
     Dataset,
@@ -17,7 +18,7 @@ class ChartValidationError(ValueError):
 
 
 class PlotlySpecValidator:
-    allowed_trace_types = {"table", "indicator", "scatter", "bar", "histogram", "heatmap"}
+    allowed_trace_types = {"table", "indicator", "scatter", "bar", "histogram", "heatmap", "waterfall", "funnel"}
     forbidden_keys = {"url", "src", "images", "frames", "transforms"}
 
     def validate(self, figure: dict[str, Any]) -> None:
@@ -52,6 +53,30 @@ class PlotlySpecValidator:
             "<script" in value.lower() or "javascript:" in value.lower()
         ):
             raise ChartValidationError("Plotly text contains unsafe active content.")
+
+
+def recommend_chart(analysis_kind: AnalysisKind, row_count: int) -> ChartKind | None:
+    if row_count == 0:
+        return None
+    if analysis_kind in {AnalysisKind.TREND, AnalysisKind.ANOMALY, AnalysisKind.SEASONALITY}:
+        return ChartKind.LINE if row_count > 1 else None
+    if analysis_kind == AnalysisKind.PERIOD_COMPARISON:
+        return ChartKind.BAR if row_count > 1 else ChartKind.KPI
+    if analysis_kind == AnalysisKind.SEGMENT_BREAKDOWN:
+        return ChartKind.BAR
+    if analysis_kind == AnalysisKind.CONTRIBUTION:
+        return ChartKind.STACKED_BAR
+    if analysis_kind == AnalysisKind.MIX_RATE_DECOMPOSITION:
+        return ChartKind.WATERFALL
+    if analysis_kind == AnalysisKind.FUNNEL_RATE:
+        return ChartKind.FUNNEL
+    if analysis_kind == AnalysisKind.CORRELATION:
+        return ChartKind.SCATTER if row_count > 1 else None
+    if analysis_kind == AnalysisKind.CROSS_SOURCE_RECONCILIATION:
+        return ChartKind.TABLE
+    if analysis_kind == AnalysisKind.QUALITY:
+        return ChartKind.TABLE
+    return ChartKind.TABLE
 
 
 class ChartBuilder:
@@ -115,7 +140,7 @@ class ChartBuilder:
             if chart_type == ChartKind.LINE:
                 trace["mode"] = "lines+markers"
             return {"data": [trace], "layout": self._layout(intent)}
-        if chart_type == ChartKind.STACKED_BAR:
+        if chart_type in {ChartKind.STACKED_BAR, ChartKind.STACKED_BAR_100}:
             grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
             for row in dataset.rows:
                 grouped[str(row.get("segment", "Unknown"))].append(row)
@@ -130,6 +155,8 @@ class ChartBuilder:
             ]
             layout = self._layout(intent)
             layout["barmode"] = "stack"
+            if chart_type == ChartKind.STACKED_BAR_100:
+                layout["barnorm"] = "percent"
             return {"data": traces, "layout": layout}
         if chart_type == ChartKind.SCATTER:
             return {
@@ -167,6 +194,30 @@ class ChartBuilder:
                             str(row.get("period", index)) for index, row in enumerate(dataset.rows)
                         ],
                         "y": [intent.metric],
+                    }
+                ],
+                "layout": self._layout(intent),
+            }
+        if chart_type == ChartKind.WATERFALL:
+            values = [row.get("value", row.get("revenue", 0)) for row in dataset.rows]
+            return {
+                "data": [
+                    {
+                        "type": "waterfall",
+                        "x": [str(row.get("segment", row.get("period", index))) for index, row in enumerate(dataset.rows)],
+                        "y": values,
+                        "measure": ["relative"] * len(values),
+                    }
+                ],
+                "layout": self._layout(intent),
+            }
+        if chart_type == ChartKind.FUNNEL:
+            return {
+                "data": [
+                    {
+                        "type": "funnel",
+                        "y": [str(row.get("stage", index)) for index, row in enumerate(dataset.rows)],
+                        "x": [row.get("visitors", row.get("value", 0)) for row in dataset.rows],
                     }
                 ],
                 "layout": self._layout(intent),

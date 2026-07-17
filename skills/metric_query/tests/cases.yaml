@@ -1,0 +1,6 @@
+positive:
+  - input: Show approved revenue for 2025.
+    expect: [metadata_resolved_before_sql, approval_required]
+negative:
+  - input: Use an unknown KPI and guess its formula.
+    expect: [stop_unknown, no_sql]

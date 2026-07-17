@@ -1,0 +1,6 @@
+positive:
+  - input: Only segment weights change.
+    expect: [mix_effect_only, zero_reconciliation_gap]
+negative:
+  - input: Segment definitions differ across periods.
+    expect: [stop_incomparable_segments]

@@ -13,6 +13,7 @@ from ama_teammate.orchestration.analysis_nodes import (
 )
 from ama_teammate.orchestration.nodes import (
     assess_goal_node,
+    build_assess_goal_node,
     clarification_node,
     intake_node,
     prepare_response_node,
@@ -20,13 +21,20 @@ from ama_teammate.orchestration.nodes import (
 from ama_teammate.orchestration.state import AgentState
 
 if TYPE_CHECKING:
+    from ama_teammate.providers.factory import ProviderBundle
     from ama_teammate.services.analysis import AnalysisService
 
 
-def build_graph(checkpointer: Any, analysis_service: AnalysisService | None = None) -> Any:
+def build_graph(
+    checkpointer: Any,
+    analysis_service: AnalysisService | None = None,
+    providers: ProviderBundle | None = None,
+) -> Any:
     builder = StateGraph(AgentState)
     builder.add_node("intake", intake_node)
-    builder.add_node("assess_goal", assess_goal_node)
+    builder.add_node(
+        "assess_goal", build_assess_goal_node(providers) if providers else assess_goal_node
+    )
     builder.add_node("clarify", clarification_node)
     builder.add_node("prepare_response", prepare_response_node)
 

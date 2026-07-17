@@ -1,0 +1,6 @@
+positive:
+  - input: Compare 10% with 12%.
+    expect: [two_percentage_points, twenty_percent_relative_change]
+negative:
+  - input: Compare with last period without a grain.
+    expect: [clarification_required]

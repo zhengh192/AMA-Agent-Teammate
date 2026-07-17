@@ -45,7 +45,10 @@ describe("Governance console", () => {
     expect(screen.getByRole("heading", { name: "Skills" })).toBeInTheDocument();
     expect(screen.getByText("SKILL.md", { exact: true })).toBeInTheDocument();
     expect(screen.getAllByText(/metadata\.yaml/).length).toBeGreaterThan(0);
-    expect(await screen.findByText("No Skill packages yet.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Installed analysis skills" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Taught skill proposals" })).toBeInTheDocument();
+    expect(await screen.findByText("No installed analysis skills.")).toBeInTheDocument();
+    expect(await screen.findByText("No taught skill proposals yet.")).toBeInTheDocument();
   });
 
   it("renders structured Memory as a dedicated page", async () => {

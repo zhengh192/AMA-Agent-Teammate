@@ -7,7 +7,12 @@
   not implemented and must not influence SQL planning.
 - Definition semantic versions use `MAJOR.MINOR.PATCH`; Git history remains the authoritative file
   change history.
-- Natural-language creation or modification of semantic metadata remains postponed as requested.
+- Natural-language changes do not overwrite the Git semantic registry. Explicit metric calculations taught in analysis chat are stored separately as user-owned, versioned learned definitions for the local pilot.
+- Foundation Analysis Skills are reviewed Git packages under immediate `skills/<skill_id>/`
+  directories. The existing `skills/registry/` proposal store remains separate and cannot
+  override a foundation Skill.
+- The existing Phase 3 natural-language proposal UI remains for backward compatibility, but this
+  implementation adds no natural-language activation or modification path for foundation Skills.
 
 # Assumptions and Decisions Needed
 
@@ -38,6 +43,12 @@
 | A-10 | Pandas 3 is the controlled dataframe implementation and in-memory DuckDB is the cross-source join engine for Phase 2. | The Phase 2 spike confirmed ecosystem fit and bounded local joins. | Production performance review |
 | A-11 | Phase 3 local retrieval uses authoritative SQLite chunks plus a rebuildable lexical/vector projection; pgvector is the first production candidate and Azure AI Search remains an evaluated alternative. | Avoids a new service while preserving migration-ready governance contracts. | Internal pilot search review |
 | A-12 | The MVP separates the Agent and governance console by route inside the existing web application; physical deployments remain independently separable later. | Meets the front-office/back-office product boundary without introducing premature services or duplicate clients. | Internal pilot deployment review |
+| A-13 | The supplied Super Agent UAT MySQL identity is used only for TLS-verified catalog reconciliation against `sa_logs.visit_log`, `turn_log`, and `telemetry_log`; business-row queries and Agent routing remain disabled until schema, sensitivity, and allowlist review is approved. | Allows evidence-based metadata reconciliation without treating UAT access as production approval. | After UAT schema gap review |
+| A-14 | On 2026-07-16 the user authorized a one-time plaintext UAT exception limited to privilege inspection, allowlisted catalog reads, and non-sensitive aggregate quality checks; the exception must not be reused by Agent routing or production connectivity. | Records the explicit temporary override after the endpoint was confirmed not to advertise TLS. | Before any reusable database integration |
+| A-15 | Agent intelligence improvements stay inside the existing typed LangGraph application: bounded redacted conversation context, model-assisted structured routing, relevance-based approved context selection, and evidence-constrained synthesis all have deterministic fallbacks. No second autonomous harness or unrestricted tool loop is introduced. | Adds initiative and continuity without duplicating state, bypassing approvals, or weakening SQL and external-action controls. | After internal pilot quality evaluation |
+| A-16 | On 2026-07-16 the user authorized reusable Agent reads against the UAT source despite its plaintext transport. This development-only exception is opt-in, limited to the three allowlisted tables, physical-count templates or explicitly labeled document-backed working assumptions, denied sensitive columns, SQL AST validation, persisted approval, bounded results, and audit. It is rejected outside development and does not approve production connectivity or business KPI activation. | Enables the requested UAT capability while isolating the known transport and semantic risks. | Before production or broader UAT query scope |
+| A-17 | Development pilot mode may use draft project-document metrics as working assumptions when an executable aggregate can be mapped to observed UAT fields. The SQL review must show the exact interpretation and assumptions; results are labeled Inferred, and user corrections create a new plan without silently activating or overwriting semantic metadata. | Supports collaborative metric learning during the local pilot without pretending the draft is an approved production contract. | After pilot metric review |
+| A-18 | An explicit answer to an Agent metric-definition clarification activates a user-owned learned definition in the local development pilot. Learned definitions are versioned in SQLite, validated against the live allowlisted catalog, never overwrite Git-approved metadata, and still require exact SQL approval for every execution. Tolerant alias matching may auto-resolve a unique strong match; close or multiple matches require clarification. | Delivers the requested teach-once behavior while preserving provenance, schema validation, and correction history. | Before multi-user or production rollout |
 
 ## Blocking questions before Phase 1
 

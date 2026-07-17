@@ -1,0 +1,72 @@
+schema_version: 1
+kind: metric_file
+definitions:
+  - kind: metric
+    id: super_agent_uat.session_count
+    version: 1.0.0
+    status: active
+    name: Super Agent UAT Session Count
+    description: Distinct physical session identifiers observed in the allowlisted UAT visit log.
+    owner: Super Agent Data and Operations
+    source: UAT physical catalog and bounded quality profile verified 2026-07-16
+    effective_from: 2026-06-01
+    effective_to: null
+    last_reviewed_at: 2026-07-16
+    aliases: [UAT session count, session count, visit count, Super Agent sessions, sessions]
+    numerator: {expression: COUNT(DISTINCT session_id), description: Distinct non-null physical session identifiers., aggregation: count_distinct, distinct_by: [super_agent_uat.visit_log.session_id], field_references: [super_agent_uat.visit_log.session_id]}
+    denominator: null
+    formula: COUNT(DISTINCT session_id)
+    distinct_logic: Count each non-null physical session ID once.
+    filters: [start_time is inside the approved half-open interval]
+    exclusions: [null session identifiers, denied sensitive columns]
+    time_logic: {event_time_field: super_agent_uat.visit_log.start_time, timezone: Unknown, window: "Half-open interval [start_date, end_date)", late_arrival_policy: Unknown}
+    supported_dimensions: [super_agent_uat.visit_log.start_time, super_agent_uat.visit_log.channel, super_agent_uat.visit_log.intent_type]
+    source_datasets: [super_agent_uat.visit_log]
+    interpretation_cautions: [This is a physical record count, not an approved eligible-session KPI., Channel and intent have material missingness., Timezone is unknown.]
+    business_rule_ids: []
+  - kind: metric
+    id: super_agent_uat.turn_count
+    version: 1.0.0
+    status: active
+    name: Super Agent UAT Turn Count
+    description: Distinct physical turn identifiers observed in the allowlisted UAT turn log.
+    owner: Super Agent Data and Operations
+    source: UAT physical catalog and bounded quality profile verified 2026-07-16
+    effective_from: 2026-06-01
+    effective_to: null
+    last_reviewed_at: 2026-07-16
+    aliases: [UAT turn count, turn count, Super Agent turns, turns]
+    numerator: {expression: COUNT(DISTINCT turn_id), description: Distinct non-null physical turn identifiers., aggregation: count_distinct, distinct_by: [super_agent_uat.turn_log.turn_id], field_references: [super_agent_uat.turn_log.turn_id]}
+    denominator: null
+    formula: COUNT(DISTINCT turn_id)
+    distinct_logic: Count each non-null physical turn ID once.
+    filters: [start_time is inside the approved half-open interval]
+    exclusions: [null turn identifiers, transcript fields, response fields, denied sensitive columns]
+    time_logic: {event_time_field: super_agent_uat.turn_log.start_time, timezone: Unknown, window: "Half-open interval [start_date, end_date)", late_arrival_policy: Unknown}
+    supported_dimensions: [super_agent_uat.turn_log.start_time]
+    source_datasets: [super_agent_uat.turn_log]
+    interpretation_cautions: [This is a physical turn count; system-triggered versus user-triggered semantics are not approved., Timezone is unknown.]
+    business_rule_ids: []
+  - kind: metric
+    id: super_agent_uat.telemetry_event_count
+    version: 1.0.0
+    status: active
+    name: Super Agent UAT Telemetry Event Count
+    description: Distinct physical event identifiers observed in the allowlisted UAT telemetry log.
+    owner: Super Agent Product Analytics
+    source: UAT physical catalog and bounded quality profile verified 2026-07-16
+    effective_from: 2026-06-01
+    effective_to: null
+    last_reviewed_at: 2026-07-16
+    aliases: [UAT telemetry event count, telemetry event count, frontend event count, telemetry events]
+    numerator: {expression: COUNT(DISTINCT event_id), description: Distinct non-null physical telemetry event identifiers., aggregation: count_distinct, distinct_by: [super_agent_uat.telemetry_log.event_id], field_references: [super_agent_uat.telemetry_log.event_id]}
+    denominator: null
+    formula: COUNT(DISTINCT event_id)
+    distinct_logic: Count each non-null physical event ID once.
+    filters: [timestamp is inside the approved half-open interval]
+    exclusions: [null event identifiers, event_data, denied sensitive columns]
+    time_logic: {event_time_field: super_agent_uat.telemetry_log.timestamp, timezone: Unknown, window: "Half-open interval [start_date, end_date)", late_arrival_policy: Unknown}
+    supported_dimensions: [super_agent_uat.telemetry_log.timestamp, super_agent_uat.telemetry_log.event_name]
+    source_datasets: [super_agent_uat.telemetry_log]
+    interpretation_cautions: [This is a physical event count, not an approved feature-success KPI., Event payload data is denied., Timezone is unknown.]
+    business_rule_ids: []

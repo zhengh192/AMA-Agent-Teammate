@@ -30,6 +30,11 @@ test("separates Knowledge, Skills, and Memory administration", async ({ page }) 
 
   await page.getByRole("link", { name: "Skills", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Package contract" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Installed analysis skills" })).toBeVisible();
+  await expect(page.getByText("9 packages", { exact: true })).toBeVisible();
+  await expect(page.locator(".installed-skill").filter({ hasText: "Metric Query" })).toBeVisible();
+  await expect(page.locator(".installed-skill").filter({ hasText: "Data Quality Check" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Taught skill proposals" })).toBeVisible();
   await expect(page.locator(".package-tree code").filter({ hasText: "SKILL.md" })).toBeVisible();
 
   await page.getByRole("link", { name: "Memory", exact: true }).click();

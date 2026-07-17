@@ -1,0 +1,27 @@
+id: mix_rate_decomposition
+name: Mix Rate Decomposition
+version: 1.0.0
+status: active
+description: Reconcile aggregate rate change into mix, within-segment rate, and interaction effects.
+owner: Data Analysis Platform
+reviewer: Data Governance
+created_at: 2026-07-15T00:00:00Z
+updated_at: 2026-07-15T00:00:00Z
+effective_from: 2026-07-15
+effective_to: null
+aliases: [mix shift, rate decomposition, 结构变化, 量率拆解]
+trigger_examples:
+  en: [Was the change caused by mix or segment rates, Decompose conversion movement]
+  zh: [变化来自结构还是分组转化率, 拆解转化率变化]
+analysis_intents: [mix_rate_decomposition]
+required_metadata: [metric, dataset, field, business_rule]
+prerequisite_skills: [data_quality_check]
+inputs:
+  - {name: period_segment_rates, type: dataset, required: true, description: Segment weights and rates for two comparable periods.}
+outputs:
+  - {name: decomposition, type: evidence, description: "Mix, rate, interaction, and reconciliation effects."}
+  - {name: decomposition_chart, type: chart, description: Waterfall recommendation when useful.}
+required_tools: [controlled_analysis_library, plotly_validator]
+deterministic_operations: [mix_rate_decomposition, decomposition_reconciliation]
+risk_level: medium
+approval: {required: false, reason: null}

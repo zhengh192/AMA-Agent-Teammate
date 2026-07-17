@@ -1,0 +1,6 @@
+positive:
+  - input: Validated evidence supports two findings.
+    expect: [evidence_links, skill_versions, data_confidence]
+negative:
+  - input: Correlation is presented as causation.
+    expect: [causal_claim_rejected, alternatives_requested]

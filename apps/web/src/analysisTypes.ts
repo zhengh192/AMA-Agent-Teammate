@@ -20,6 +20,8 @@ export interface AnalysisPlanView {
   dimensions: string[];
   chart_type: string;
   success_criteria: string;
+  metadata_confidence: "authoritative" | "working_assumption" | "learned_definition";
+  assumptions: string[];
   queries: AnalysisQueryPreview[];
   join_plan: Record<string, unknown> | null;
   policy_version: string;

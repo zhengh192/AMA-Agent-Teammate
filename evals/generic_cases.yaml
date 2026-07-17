@@ -1,0 +1,139 @@
+version: 1.0.0
+cases:
+  - id: metric_query_revenue
+    category: metric_query
+    operation: skill_plan
+    input: {analysis_kind: trend, question: Show revenue trend}
+    expected: {contains_skill: metric_query, prerequisites_resolved: true}
+  - id: metric_query_conversion
+    category: metric_query
+    operation: skill_plan
+    input: {analysis_kind: funnel_rate, question: Show conversion funnel}
+    expected: {contains_skill: metric_query, prerequisites_resolved: true}
+  - id: metric_query_cross_source
+    category: metric_query
+    operation: skill_plan
+    input: {analysis_kind: cross_source_reconciliation, question: Reconcile sources}
+    expected: {contains_skill: metric_query, prerequisites_resolved: true}
+  - id: metric_query_quality
+    category: metric_query
+    operation: skill_plan
+    input: {analysis_kind: quality, question: Check completeness}
+    expected: {contains_skill: metric_query, prerequisites_resolved: true}
+  - id: period_rate_change
+    category: period_comparison
+    operation: change
+    input: {previous: 0.10, current: 0.12, is_rate: true}
+    expected: {percentage_point_change: 2.0, relative_change: 0.2}
+  - id: period_value_increase
+    category: period_comparison
+    operation: change
+    input: {previous: 100, current: 125, is_rate: false}
+    expected: {absolute_change: 25.0, relative_change: 0.25}
+  - id: period_value_decrease
+    category: period_comparison
+    operation: change
+    input: {previous: 100, current: 80, is_rate: false}
+    expected: {absolute_change: -20.0, relative_change: -0.2}
+  - id: period_zero_baseline
+    category: period_comparison
+    operation: change
+    input: {previous: 0, current: 10, is_rate: false}
+    expected: {absolute_change: 10.0, relative_change: null}
+  - id: trend_small_sample
+    category: trend_anomaly
+    operation: small_sample
+    input: {sample_size: 5}
+    expected: {warning: true}
+  - id: trend_sufficient_sample
+    category: trend_anomaly
+    operation: small_sample
+    input: {sample_size: 40}
+    expected: {warning: false}
+  - id: trend_plan
+    category: trend_anomaly
+    operation: skill_plan
+    input: {analysis_kind: anomaly, question: Detect anomaly}
+    expected: {contains_skill: trend_anomaly_analysis, prerequisites_resolved: true}
+  - id: seasonality_plan
+    category: trend_anomaly
+    operation: skill_plan
+    input: {analysis_kind: seasonality, question: Check seasonality hypothesis}
+    expected: {contains_skill: trend_anomaly_analysis, prerequisites_resolved: true}
+  - id: contribution_balanced
+    category: contribution
+    operation: contribution
+    input: {changes: {A: 30, B: 70}}
+    expected: {share_sum: 1.0, reconciliation_gap: 0.0}
+  - id: contribution_signed
+    category: contribution
+    operation: contribution
+    input: {changes: {A: 120, B: -20}}
+    expected: {share_sum: 1.0, reconciliation_gap: 0.0}
+  - id: contribution_zero_total
+    category: contribution
+    operation: contribution
+    input: {changes: {A: 10, B: -10}}
+    expected: {share_sum: 0, reconciliation_gap: 0.0}
+  - id: contribution_plan
+    category: contribution
+    operation: skill_plan
+    input: {analysis_kind: contribution, question: Explain segment contribution}
+    expected: {contains_skill: contribution_analysis, prerequisites_resolved: true}
+  - id: mix_only
+    category: mix_rate
+    operation: mix_rate
+    input:
+      previous_weights: {A: 0.5, B: 0.5}
+      previous_rates: {A: 0.2, B: 0.4}
+      current_weights: {A: 0.25, B: 0.75}
+      current_rates: {A: 0.2, B: 0.4}
+    expected: {mix_effect: 0.05, rate_effect: 0.0, reconciliation_gap: 0.0}
+  - id: rate_only
+    category: mix_rate
+    operation: mix_rate
+    input:
+      previous_weights: {A: 0.5, B: 0.5}
+      previous_rates: {A: 0.2, B: 0.4}
+      current_weights: {A: 0.5, B: 0.5}
+      current_rates: {A: 0.3, B: 0.5}
+    expected: {mix_effect: 0.0, rate_effect: 0.1, reconciliation_gap: 0.0}
+  - id: mix_and_rate
+    category: mix_rate
+    operation: mix_rate
+    input:
+      previous_weights: {A: 0.5, B: 0.5}
+      previous_rates: {A: 0.2, B: 0.4}
+      current_weights: {A: 0.25, B: 0.75}
+      current_rates: {A: 0.3, B: 0.5}
+    expected: {total_change: 0.15, reconciliation_gap: 0.0}
+  - id: funnel_standard
+    category: funnel
+    operation: funnel
+    input: {entered: 100, completed: 60}
+    expected: {conversion_rate: 0.6, drop_off_rate: 0.4}
+  - id: funnel_zero_denominator
+    category: funnel
+    operation: funnel
+    input: {entered: 0, completed: 0}
+    expected: {conversion_rate: null, drop_off_rate: null}
+  - id: cross_source_partial_match
+    category: cross_source
+    operation: match_rate
+    input: {left_keys: [1, 2, 3, 4], right_keys: [1, 2, 3]}
+    expected: {match_rate: 0.75, unmatched_rate: 0.25}
+  - id: cross_source_duplicate_risk
+    category: cross_source
+    operation: skill_plan
+    input: {analysis_kind: cross_source_reconciliation, question: Reconcile duplicate join keys}
+    expected: {contains_skill: cross_source_reconciliation, prerequisites_resolved: true}
+  - id: ambiguous_metric_alias
+    category: ambiguous
+    operation: clarification
+    input: {missing_or_ambiguous: true, reason: metric_alias_matches_multiple_active_definitions}
+    expected: {clarification_required: true}
+  - id: ambiguous_period_grain
+    category: ambiguous
+    operation: clarification
+    input: {missing_or_ambiguous: true, reason: comparison_period_and_grain_missing}
+    expected: {clarification_required: true}

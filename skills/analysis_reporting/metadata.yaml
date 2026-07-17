@@ -1,0 +1,26 @@
+id: analysis_reporting
+name: Analysis Reporting
+version: 1.0.0
+status: active
+description: Assemble evidence-linked analytical output with explicit epistemic and confidence labels.
+owner: Data Analysis Platform
+reviewer: Data Governance
+created_at: 2026-07-15T00:00:00Z
+updated_at: 2026-07-15T00:00:00Z
+effective_from: 2026-07-15
+effective_to: null
+aliases: [analysis summary, evidence report, 分析报告, 结论输出]
+trigger_examples:
+  en: [Summarize the analysis, Produce evidence-linked findings]
+  zh: [总结分析结果, 输出有证据的结论]
+analysis_intents: [trend, period_comparison, segment_breakdown, contribution, funnel_rate, quality, anomaly, seasonality, correlation, mix_rate_decomposition, cross_source_reconciliation]
+required_metadata: [metric, dataset]
+prerequisite_skills: []
+inputs:
+  - {name: analysis_evidence, type: evidence, required: true, description: Validated evidence and deterministic calculation outputs.}
+outputs:
+  - {name: analysis_result, type: analysis_result, description: Shared structured AnalysisResult contract.}
+required_tools: [evidence_validator, plotly_validator]
+deterministic_operations: [evidence_link_validation, confidence_cap, chart_recommendation]
+risk_level: low
+approval: {required: false, reason: null}

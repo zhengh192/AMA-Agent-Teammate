@@ -1,0 +1,6 @@
+positive:
+  - input: Twelve monthly values include one z-score candidate.
+    expect: [candidate_index, threshold_recorded]
+negative:
+  - input: Two values prove seasonality.
+    expect: [small_sample_warning, inferred_not_confirmed]

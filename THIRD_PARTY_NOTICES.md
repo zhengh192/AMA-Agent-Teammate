@@ -11,6 +11,7 @@ Phase 1 through Phase 3 dependencies are resolved with `uv.lock` and `pnpm-lock.
 | langgraph-checkpoint-sqlite | 3.1.0 | MIT | https://pypi.org/project/langgraph-checkpoint-sqlite/ | Local checkpoints |
 | openai | 2.45.0 | Apache-2.0 | https://pypi.org/project/openai/ | Azure OpenAI adapter |
 | pydantic-settings | 2.14.2 | MIT | https://pypi.org/project/pydantic-settings/ | Environment configuration |
+| PyMySQL | 1.2.0 | MIT | https://pypi.org/project/PyMySQL/ | TLS-verified read-only MySQL connector |
 | python-multipart | 0.0.32 | Apache-2.0 | https://pypi.org/project/python-multipart/ | Future upload request boundary |
 | SQLAlchemy | 2.0.51 | MIT | https://pypi.org/project/SQLAlchemy/ | Metadata persistence |
 | uvicorn | 0.51.0 | BSD-3-Clause | https://pypi.org/project/uvicorn/ | ASGI server |

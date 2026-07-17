@@ -11,7 +11,10 @@ class AgentState(TypedDict, total=False):
     input_text: str
     combined_input: str
     route: Literal["chat", "analysis", "knowledge"]
+    task_goal: str
+    decision_summary: str
     status: str
+    analysis_question: str
     missing_fields: list[str]
     clarification_response: str
     role_context: str
@@ -25,3 +28,4 @@ class AgentState(TypedDict, total=False):
     approval_status: str
     analysis_result_ref: str
     final_answer_ref: str
+    selected_skill_refs: list[dict[str, str]]

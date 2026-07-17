@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { governanceApi, type SkillProposal } from "../governanceApi";
+import { governanceApi, type AnalysisSkillView, type SkillProposal } from "../governanceApi";
 
 function renderFile(content: unknown): string {
   return typeof content === "string" ? content : JSON.stringify(content, null, 2);
@@ -7,12 +7,24 @@ function renderFile(content: unknown): string {
 
 export function SkillsAdminPage() {
   const [skills, setSkills] = useState<SkillProposal[]>([]);
+  const [installedSkills, setInstalledSkills] = useState<AnalysisSkillView[]>([]);
   const [teaching, setTeaching] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function refresh() { setSkills(await governanceApi.skillProposals()); }
-  useEffect(() => { void refresh().catch(() => undefined); }, []);
+  async function refresh() {
+    const [installed, proposals] = await Promise.all([
+      governanceApi.analysisSkills(),
+      governanceApi.skillProposals(),
+    ]);
+    setInstalledSkills(installed);
+    setSkills(proposals);
+  }
+  useEffect(() => {
+    void refresh().catch((caught) => {
+      setError(caught instanceof Error ? caught.message : "Skill registry failed to load.");
+    });
+  }, []);
 
   async function act(action: () => Promise<unknown>) {
     setBusy(true);
@@ -41,12 +53,41 @@ export function SkillsAdminPage() {
         <p><strong>SKILL.md</strong> contains the approved operating instructions. Metadata declares version, owner, permissions, tool allowlist, inputs/outputs, and rollback. Examples and tests make the method reviewable before activation.</p>
       </article>
 
+
+      <article className="governance-panel installed-skill-panel">
+        <div className="panel-heading">
+          <div><h3>Installed analysis skills</h3><p>Validated Git-tracked packages currently available to the analysis planner.</p></div>
+          <span className="format-chip">{installedSkills.length} packages</span>
+        </div>
+        <div className="installed-skill-list">
+          {installedSkills.length === 0 ? <p>No installed analysis skills.</p> : installedSkills.map((skill) => (
+            <details className="installed-skill" key={`${skill.id}@${skill.version}`}>
+              <summary><span>{skill.name}</span><small>v{skill.version} � {skill.status}</small></summary>
+              <p>{skill.description}</p>
+              <dl className="skill-metadata-grid">
+                <div><dt>Registry ID</dt><dd><code>{skill.id}</code></dd></div>
+                <div><dt>Owner</dt><dd>{skill.owner}</dd></div>
+                <div><dt>Risk</dt><dd>{skill.risk_level}</dd></div>
+                <div><dt>Approval</dt><dd>{skill.approval.required ? "Required" : "Not required"}</dd></div>
+                <div><dt>Analysis intents</dt><dd>{skill.analysis_intents.join(", ")}</dd></div>
+                <div><dt>Prerequisites</dt><dd>{skill.prerequisite_skills.join(", ") || "None"}</dd></div>
+                <div><dt>Required metadata</dt><dd>{skill.required_metadata.join(", ") || "None"}</dd></div>
+                <div><dt>Tools</dt><dd>{skill.required_tools.join(", ") || "Controlled library only"}</dd></div>
+              </dl>
+              {skill.deterministic_operations.length > 0 ? (
+                <div className="skill-operations"><strong>Deterministic operations</strong><span>{skill.deterministic_operations.join(", ")}</span></div>
+              ) : null}
+            </details>
+          ))}
+        </div>
+      </article>
+
       <article className="governance-panel skill-list-panel">
-        <div className="panel-heading"><div><h3>Skill registry</h3><p>Teach in the Agent or draft here. Only an exact approved package is discoverable at runtime.</p></div></div>
+        <div className="panel-heading"><div><h3>Taught skill proposals</h3><p>Teach in the Agent or draft here. Only an exact approved package can become active.</p></div></div>
         <textarea value={teaching} onChange={(event) => setTeaching(event.target.value)} placeholder="Create a repeatable analysis method…" rows={3} />
         <button type="button" disabled={!teaching.trim() || busy} onClick={() => void act(async () => { await governanceApi.proposeSkill(teaching); setTeaching(""); })}>Create draft package</button>
         <div className="skill-list">
-          {skills.length === 0 ? <p>No Skill packages yet.</p> : skills.map((proposal) => (
+          {skills.length === 0 ? <p>No taught skill proposals yet.</p> : skills.map((proposal) => (
             <details className="proposal" key={proposal.id} open={proposal.status === "pending_approval"}>
               <summary>{proposal.name} v{proposal.version} · {proposal.status}</summary>
               <div className="proposal-meta"><span>Tools: {proposal.tool_allowlist.join(", ")}</span><span>Exact package: {proposal.payload_hash.slice(0, 20)}…</span></div>

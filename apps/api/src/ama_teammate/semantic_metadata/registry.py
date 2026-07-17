@@ -240,13 +240,15 @@ class SemanticMetadataRegistry:
                 results.append(item)
         return results
 
-    def resolve_metric(self, term: str, *, context: str = "") -> MetricDefinition:
+    def resolve_metric(
+        self, term: str, *, context: str = "", allow_draft: bool = False
+    ) -> MetricDefinition:
         normalized = _normalized(term)
         metrics = cast(list[MetricDefinition], self._by_type.get(DefinitionType.METRIC, []))
         matches = [
             item
             for item in metrics
-            if self._effective(item)
+            if (self._effective(item) or (allow_draft and item.status == DefinitionStatus.DRAFT))
             and normalized in {_normalized(item.id), _normalized(item.name), *map(_normalized, item.aliases)}
         ]
         if not matches:

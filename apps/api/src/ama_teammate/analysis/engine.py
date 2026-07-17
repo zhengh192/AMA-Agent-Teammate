@@ -64,6 +64,36 @@ class ControlledAnalysisEngine:
                         evidence_ids=[join_evidence.id],
                     )
                 )
+        if intent.metadata_confidence == "working_assumption":
+            assumption_evidence = EvidenceRecord(
+                id=new_id(),
+                title="Pilot metric working assumption",
+                dataset_ids=[dataset.id],
+                query_proposal_ids=dataset.query_proposal_ids,
+                calculation="Document-backed draft formula shown in the approved SQL plan",
+                support={
+                    "metric": intent.metric,
+                    "metadata_confidence": intent.metadata_confidence,
+                    "assumptions": intent.assumptions,
+                },
+                epistemic_label=EpistemicLabel.INFERRED.value,
+                confidence=0.5,
+                limitations=intent.assumptions,
+            )
+            evidence.append(assumption_evidence)
+            conclusions = [
+                item.model_copy(
+                    update={
+                        "epistemic_label": (
+                            EpistemicLabel.INFERRED.value
+                            if item.epistemic_label == EpistemicLabel.CONFIRMED.value
+                            else item.epistemic_label
+                        ),
+                        "evidence_ids": [*item.evidence_ids, assumption_evidence.id],
+                    }
+                )
+                for item in conclusions
+            ]
         return AnalysisComputation(summary=summary, evidence=evidence, conclusions=conclusions)
 
     def _quality_evidence(self, dataset: Dataset) -> EvidenceRecord:

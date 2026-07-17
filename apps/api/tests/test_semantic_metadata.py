@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from datetime import date, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -10,6 +12,12 @@ from ama_teammate.analysis.models import AnalysisIntent, JoinPlan
 from ama_teammate.analysis.planner import AnalysisPlanner
 from ama_teammate.config import Settings
 from ama_teammate.data_access.demo import DemoReadOnlyConnector, demo_source_configs
+from ama_teammate.data_access.models import (
+    ColumnCatalog,
+    DatabaseDialect,
+    DataSourceConfig,
+    TableCatalog,
+)
 from ama_teammate.data_access.registry import ConnectorRegistry
 from ama_teammate.providers.factory import create_provider_bundle
 from ama_teammate.semantic_metadata.models import (
@@ -128,3 +136,60 @@ def test_semantic_metadata_api_lists_retrieves_and_searches(client: Any) -> None
     searched = client.get("/api/semantic-metadata/search", params={"q": "working hours transfer"})
     assert searched.status_code == 200
     assert searched.json()[0]["id"] == "super_agent.whtr"
+@pytest.mark.asyncio
+async def test_uat_natural_language_planning_uses_approved_physical_metric() -> None:
+    visit_table = TableCatalog(
+        name="visit_log",
+        columns=[
+            ColumnCatalog(name="session_id", data_type="varchar(255)", nullable=True),
+            ColumnCatalog(name="start_time", data_type="datetime(6)", nullable=True),
+            ColumnCatalog(name="channel", data_type="string", nullable=True),
+            ColumnCatalog(name="intent_type", data_type="string", nullable=True),
+            ColumnCatalog(name="agent_working_hour", data_type="string", nullable=True),
+            ColumnCatalog(name="to_agent_flag", data_type="string", nullable=True),
+            ColumnCatalog(name="touchless_exception", data_type="string", nullable=True),
+            ColumnCatalog(name="is_foc", data_type="string", nullable=True),
+            ColumnCatalog(name="survey_score", data_type="double", nullable=True),
+            ColumnCatalog(name="survey_resolved", data_type="string", nullable=True),
+        ],
+    )
+    source = DataSourceConfig(
+        id="super_agent_uat",
+        display_name="Super Agent UAT",
+        dialect=DatabaseDialect.MYSQL,
+        execution_dialect="mysql",
+        secret_ref="env:super_agent_uat",
+        allowed_schemas={"sa_logs"},
+        tables={"visit_log": visit_table},
+        max_rows=500,
+        max_result_bytes=262_144,
+    )
+    connectors = ConnectorRegistry([SimpleNamespace(config=source)])
+    semantic = loaded_registry()
+    providers = create_provider_bundle(Settings(_env_file=None, ama_provider="mock"))
+    planner = AnalysisPlanner(providers, connectors, SQLSafetyGateway(), semantic)
+    context = planner._approved_semantic_context("How many Super Agent UAT sessions are there?")
+    assert [item["id"] for item in context["metrics"]] == [
+        "super_agent_uat.session_count"
+    ]
+    try:
+        plan = await planner.build("run-uat", "How many Super Agent UAT sessions are there in total?")
+    finally:
+        await providers.provider.close()
+
+    assert plan.metric_definition.id == "super_agent_uat.session_count"
+    assert plan.metric_definition.version == "1.0.0"
+    assert plan.intent.source_ids == ["super_agent_uat"]
+    assert plan.intent.start_date == "2026-06-01"
+    assert plan.intent.end_date == (date.today() + timedelta(days=1)).isoformat()
+    assert plan.queries[0].referenced_tables == ["visit_log"]
+    assert "COUNT(DISTINCT session_id)" in plan.queries[0].normalized_sql
+    assert plan.queries[0].dialect == "mysql"
+
+    working = await planner.build("run-whtr", "Show Super Agent UAT WHTR")
+    assert working.metric_definition.id == "super_agent.whtr"
+    assert working.metric_definition.version == "0.9.30"
+    assert working.intent.metadata_confidence == "working_assumption"
+    assert working.intent.assumptions
+    assert "agent_working_hour" in working.queries[0].normalized_sql
+    assert "to_agent_flag" in working.queries[0].normalized_sql
