@@ -82,6 +82,23 @@ class AnalysisSkillRegistry:
             values = [item for item in values if item.metadata.status == status]
         return sorted(values, key=lambda item: (item.metadata.id, item.metadata.version))
 
+    def validate_replacement(self, package: SkillPackage) -> list[SkillValidationIssue]:
+        candidate = AnalysisSkillRegistry(
+            [item for item in self._packages if item.metadata.id != package.metadata.id] + [package]
+        )
+        return candidate._reference_issues()
+
+    def replace(self, package: SkillPackage) -> None:
+        issues = [item for item in self.validate_replacement(package) if item.active]
+        if issues:
+            raise AnalysisSkillValidationError(issues)
+        self._packages = [
+            item for item in self._packages if item.metadata.id != package.metadata.id
+        ] + [package]
+        self._by_id = defaultdict(list)
+        for item in self._packages:
+            self._by_id[item.metadata.id].append(item)
+
     def get(self, skill_id: str, version: str | None = None) -> SkillPackage:
         matches = [
             item
@@ -125,9 +142,12 @@ class AnalysisSkillRegistry:
         ordered_ids: list[str] = []
 
         def add_with_prerequisites(skill_id: str) -> None:
-            package = self.get(skill_id)
+            try:
+                package = self.get(skill_id)
+            except LookupError:
+                return
             if not self._effective(package.metadata):
-                raise ValueError(f"Skill is not currently active: {skill_id}")
+                return
             for prerequisite in package.metadata.prerequisite_skills:
                 add_with_prerequisites(prerequisite)
             if skill_id not in ordered_ids:

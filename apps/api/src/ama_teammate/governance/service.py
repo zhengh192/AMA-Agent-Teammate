@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -11,6 +12,8 @@ from typing import Any
 import yaml
 from sqlalchemy import func, select
 
+from ama_teammate.analysis_skills.models import SkillMetadata, SkillPackage, SkillStatus
+from ama_teammate.analysis_skills.registry import AnalysisSkillRegistry
 from ama_teammate.config import Settings
 from ama_teammate.domain.models import new_id, utc_now
 from ama_teammate.governance.ingestion import (
@@ -27,6 +30,7 @@ from ama_teammate.storage.governance_schema import (
     DocumentVersionRow,
     KnowledgeChunkRow,
     KnowledgeConflictRow,
+    KnowledgeProposalRow,
     KnowledgeRecordRow,
     MemoryProposalRow,
     MemoryVersionRow,
@@ -64,11 +68,13 @@ class GovernanceService:
         database: Database,
         repository: Repository,
         embeddings: EmbeddingProvider,
+        analysis_skill_registry: AnalysisSkillRegistry,
     ) -> None:
         self.settings = settings
         self.database = database
         self.repository = repository
         self.embeddings = embeddings
+        self.analysis_skill_registry = analysis_skill_registry
 
     async def ingest(
         self,
@@ -264,6 +270,245 @@ class GovernanceService:
             },
             status="pending_approval",
         )
+
+    async def propose_knowledge_entry(
+        self,
+        owner_id: str,
+        *,
+        kind: str,
+        name: str,
+        definition: str,
+        owner: str,
+        source: str,
+        effective_date: str | None,
+        target_document_id: str | None = None,
+    ) -> dict[str, Any]:
+        payload = {
+            "kind": kind,
+            "name": name.strip(),
+            "definition": definition.strip(),
+            "owner": owner.strip(),
+            "source": source.strip(),
+            "effective_date": effective_date,
+        }
+        serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        if SECRET_PATTERN.search(serialized):
+            raise ValueError("Secrets are not allowed in Knowledge entries.")
+        proposal_id = new_id()
+        action = "create"
+        base_version: int | None = None
+        if target_document_id:
+            async with self.database.sessions() as session:
+                document = await session.get(DocumentRow, target_document_id)
+                if document is None or document.owner_id != owner_id:
+                    raise LookupError("Knowledge document not found.")
+                if document.status != "active":
+                    raise ValueError("Only active Knowledge can be edited.")
+                filename = document.filename
+                base_version = document.current_version
+                action = "update"
+        else:
+            slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "entry"
+            filename = f"admin-knowledge-{slug[:80]}-{proposal_id[:8]}.md"
+        canonical = json.dumps(
+            {
+                "action": action,
+                "target_document_id": target_document_id,
+                "base_version": base_version,
+                "filename": filename,
+                "payload": payload,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        row = KnowledgeProposalRow(
+            id=proposal_id,
+            owner_id=owner_id,
+            action=action,
+            target_document_id=target_document_id,
+            base_version=base_version,
+            filename=filename,
+            payload_json=json.dumps(payload, ensure_ascii=False),
+            payload_hash=hash_text(canonical),
+            status="pending_approval",
+            created_at=utc_now(),
+            decided_at=None,
+        )
+        async with self.database.sessions() as session:
+            session.add(row)
+            await session.commit()
+        await self.repository.add_audit_event(
+            actor_id=owner_id,
+            event_type="knowledge.change.proposed",
+            status="waiting",
+            input_text=serialized,
+            safe_details={"proposal_id": row.id, "action": action, "name": payload["name"]},
+        )
+        return self._knowledge_proposal_view(row)
+
+    async def propose_knowledge_delete(self, owner_id: str, document_id: str) -> dict[str, Any]:
+        async with self.database.sessions() as session:
+            document = await session.get(DocumentRow, document_id)
+            if document is None or document.owner_id != owner_id:
+                raise LookupError("Knowledge document not found.")
+            if document.status == "deleted":
+                raise ValueError("Knowledge document is already deleted.")
+            payload = {"name": document.filename}
+            canonical = json.dumps(
+                {
+                    "action": "delete",
+                    "target_document_id": document.id,
+                    "base_version": document.current_version,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            row = KnowledgeProposalRow(
+                id=new_id(),
+                owner_id=owner_id,
+                action="delete",
+                target_document_id=document.id,
+                base_version=document.current_version,
+                filename=document.filename,
+                payload_json=json.dumps(payload),
+                payload_hash=hash_text(canonical),
+                status="pending_approval",
+                created_at=utc_now(),
+                decided_at=None,
+            )
+            session.add(row)
+            await session.commit()
+        await self.repository.add_audit_event(
+            actor_id=owner_id,
+            event_type="knowledge.delete.proposed",
+            status="waiting",
+            safe_details={"proposal_id": row.id, "document_id": document_id},
+        )
+        return self._knowledge_proposal_view(row)
+
+    async def list_knowledge_proposals(self, owner_id: str) -> list[dict[str, Any]]:
+        async with self.database.sessions() as session:
+            rows = (
+                await session.scalars(
+                    select(KnowledgeProposalRow)
+                    .where(KnowledgeProposalRow.owner_id == owner_id)
+                    .order_by(KnowledgeProposalRow.created_at.desc())
+                )
+            ).all()
+            return [self._knowledge_proposal_view(row) for row in rows]
+
+    async def decide_knowledge_proposal(
+        self, owner_id: str, proposal_id: str, payload_hash: str, decision: str
+    ) -> dict[str, Any]:
+        async with self.database.sessions() as session:
+            row = await session.get(KnowledgeProposalRow, proposal_id)
+            if row is None or row.owner_id != owner_id:
+                raise LookupError("Knowledge proposal not found.")
+            if row.payload_hash != payload_hash:
+                raise ValueError("Approval payload hash does not match the immutable proposal.")
+            if row.status != "pending_approval":
+                return self._knowledge_proposal_view(row)
+            action = row.action
+            target_document_id = row.target_document_id
+            base_version = row.base_version
+            filename = row.filename
+            payload = json.loads(row.payload_json)
+        if decision == "approved":
+            if action in {"update", "delete"}:
+                async with self.database.sessions() as session:
+                    target = await session.get(DocumentRow, target_document_id)
+                    if target is None or target.owner_id != owner_id:
+                        raise LookupError("Knowledge document not found.")
+                    if target.current_version != base_version:
+                        raise ValueError("Knowledge changed after this proposal was created.")
+            if action == "delete":
+                assert target_document_id is not None
+                await self._delete_document_now(owner_id, target_document_id)
+            else:
+                await self.ingest(
+                    owner_id=owner_id,
+                    filename=filename,
+                    media_type="text/markdown",
+                    data=_knowledge_markdown(payload).encode("utf-8"),
+                    classification="internal",
+                    source_metadata={
+                        "owner": payload["owner"],
+                        "source": "admin_direct_entry",
+                        "source_reference": payload["source"],
+                        "effective_date": payload.get("effective_date"),
+                        "uploader": owner_id,
+                        "classification": "internal",
+                        "knowledge_entry": payload,
+                    },
+                    status="active",
+                )
+        async with self.database.sessions() as session:
+            row = await session.get(KnowledgeProposalRow, proposal_id)
+            assert row is not None
+            row.status = "approved" if decision == "approved" else "rejected"
+            row.decided_at = utc_now()
+            await session.commit()
+        await self.repository.add_audit_event(
+            actor_id=owner_id,
+            event_type=f"knowledge.change.{decision}",
+            status="success",
+            input_text=payload_hash,
+            safe_details={"proposal_id": proposal_id, "action": action},
+        )
+        return self._knowledge_proposal_view(row)
+
+    async def delete_knowledge_proposal(self, owner_id: str, proposal_id: str) -> dict[str, Any]:
+        async with self.database.sessions() as session:
+            row = await session.get(KnowledgeProposalRow, proposal_id)
+            if row is None or row.owner_id != owner_id:
+                raise LookupError("Knowledge proposal not found.")
+            if row.status == "approved":
+                raise ValueError("Approved Knowledge history cannot be deleted.")
+            row.status = "deleted"
+            row.payload_json = "{}"
+            row.decided_at = utc_now()
+            await session.commit()
+        await self.repository.add_audit_event(
+            actor_id=owner_id,
+            event_type="knowledge.proposal.deleted",
+            status="success",
+            safe_details={"proposal_id": proposal_id},
+        )
+        return self._knowledge_proposal_view(row)
+
+    async def _delete_document_now(self, owner_id: str, document_id: str) -> None:
+        async with self.database.sessions() as session:
+            document = await session.get(DocumentRow, document_id)
+            if document is None or document.owner_id != owner_id:
+                raise LookupError("Knowledge document not found.")
+            document.status = "deleted"
+            version_ids = list(
+                await session.scalars(
+                    select(DocumentVersionRow.id).where(
+                        DocumentVersionRow.document_id == document_id
+                    )
+                )
+            )
+            records = list(
+                await session.scalars(
+                    select(KnowledgeRecordRow).where(
+                        KnowledgeRecordRow.document_version_id.in_(version_ids)
+                    )
+                )
+            )
+            for record in records:
+                record.deprecated = True
+            chunks = list(
+                await session.scalars(
+                    select(KnowledgeChunkRow).where(
+                        KnowledgeChunkRow.document_version_id.in_(version_ids)
+                    )
+                )
+            )
+            for chunk in chunks:
+                chunk.index_status = "deleted"
+            await session.commit()
 
     async def decide_document(
         self,
@@ -505,6 +750,154 @@ class GovernanceService:
         )
         return self._skill_proposal_view(row)
 
+    async def propose_analysis_skill(
+        self,
+        owner_id: str,
+        raw_metadata: dict[str, Any],
+        instructions: str,
+    ) -> dict[str, Any]:
+        metadata_payload = dict(raw_metadata)
+        skill_id = str(metadata_payload.get("id") or "").strip()
+        if not skill_id:
+            raise ValueError("Analysis Skill metadata requires an id.")
+        try:
+            current = self.analysis_skill_registry.get(skill_id)
+        except LookupError:
+            current = None
+        now = utc_now()
+        if current is None:
+            base_version = None
+            metadata_payload.setdefault("version", "1.0.0")
+            metadata_payload.setdefault("created_at", now.isoformat())
+        else:
+            base_version = current.metadata.version
+            metadata_payload["id"] = current.metadata.id
+            metadata_payload["version"] = _next_semver(current.metadata.version)
+            metadata_payload["created_at"] = current.metadata.created_at.isoformat()
+        metadata_payload["updated_at"] = now.isoformat()
+        metadata = SkillMetadata.model_validate(metadata_payload)
+        target = self.settings.ama_analysis_skill_root / metadata.id
+        package = SkillPackage(
+            metadata=metadata,
+            instructions=instructions.strip(),
+            path=str(target),
+        )
+        issues = [
+            item
+            for item in self.analysis_skill_registry.validate_replacement(package)
+            if item.active
+        ]
+        if issues:
+            raise ValueError("; ".join(item.message for item in issues))
+        files = {
+            "SKILL.md": package.instructions,
+            "metadata.yaml": metadata.model_dump(mode="json"),
+        }
+        canonical = json.dumps(files, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        payload_hash = hash_text(canonical)
+        async with self.database.sessions() as session:
+            existing = await session.scalar(
+                select(SkillProposalRow).where(
+                    SkillProposalRow.owner_id == owner_id,
+                    SkillProposalRow.payload_hash == payload_hash,
+                )
+            )
+            if existing is not None:
+                return self._skill_proposal_view(existing)
+            row = SkillProposalRow(
+                id=new_id(),
+                name=metadata.id,
+                version=metadata.version,
+                owner_id=owner_id,
+                source_text_hash=hash_text(package.instructions),
+                diff_json=canonical,
+                payload_hash=payload_hash,
+                tool_allowlist_json=json.dumps(metadata.required_tools),
+                status="pending_approval",
+                base_version=base_version,
+                created_at=now,
+                decided_at=None,
+            )
+            session.add(row)
+            await session.commit()
+        await self.repository.add_audit_event(
+            actor_id=owner_id,
+            event_type="analysis_skill.change.proposed",
+            status="waiting",
+            input_text=payload_hash,
+            safe_details={
+                "proposal_id": row.id,
+                "skill_id": metadata.id,
+                "version": metadata.version,
+                "target_status": metadata.status.value,
+            },
+        )
+        return self._skill_proposal_view(row)
+
+    async def revise_taught_skill(
+        self, owner_id: str, proposal_id: str, instructions: str
+    ) -> dict[str, Any]:
+        async with self.database.sessions() as session:
+            base = await session.get(SkillProposalRow, proposal_id)
+            if base is None or base.owner_id != owner_id:
+                raise LookupError("Skill proposal not found.")
+            files = json.loads(base.diff_json)
+            if _analysis_skill_files(files):
+                raise ValueError("Use the analysis Skill editor for installed packages.")
+            version = _next_semver(base.version)
+            files["SKILL.md"] = instructions.strip()
+            metadata = dict(files["metadata.yaml"])
+            metadata["version"] = version
+            metadata["status"] = "active"
+            metadata["rollback_version"] = base.version
+            files["metadata.yaml"] = metadata
+            canonical = json.dumps(files, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            row = SkillProposalRow(
+                id=new_id(),
+                name=base.name,
+                version=version,
+                owner_id=owner_id,
+                source_text_hash=hash_text(instructions),
+                diff_json=canonical,
+                payload_hash=hash_text(canonical),
+                tool_allowlist_json=base.tool_allowlist_json,
+                status="pending_approval",
+                base_version=base.version,
+                created_at=utc_now(),
+                decided_at=None,
+            )
+            session.add(row)
+            await session.commit()
+        await self.repository.add_audit_event(
+            actor_id=owner_id,
+            event_type="skill.revision.proposed",
+            status="waiting",
+            safe_details={"proposal_id": row.id, "name": row.name, "version": row.version},
+        )
+        return self._skill_proposal_view(row)
+
+    async def delete_skill_proposal(self, owner_id: str, proposal_id: str) -> dict[str, Any]:
+        async with self.database.sessions() as session:
+            row = await session.get(SkillProposalRow, proposal_id)
+            if row is None or row.owner_id != owner_id:
+                raise LookupError("Skill proposal not found.")
+            linked_version = await session.scalar(
+                select(SkillVersionRow).where(SkillVersionRow.proposal_id == proposal_id)
+            )
+            if linked_version is not None:
+                raise ValueError("Activated Skill version history cannot be deleted.")
+            row.status = "deleted"
+            row.diff_json = "{}"
+            row.decided_at = utc_now()
+            await session.commit()
+        await self.repository.add_audit_event(
+            actor_id=owner_id,
+            event_type="skill.proposal.deleted",
+            status="success",
+            safe_details={"proposal_id": proposal_id, "name": row.name},
+        )
+        return self._skill_proposal_view(row)
+
     async def decide_skill(
         self, owner_id: str, proposal_id: str, payload_hash: str, decision: str
     ) -> dict[str, Any]:
@@ -516,10 +909,16 @@ class GovernanceService:
                 raise ValueError("Approval payload hash does not match the immutable proposal.")
             if row.status != "pending_approval":
                 return self._skill_proposal_view(row)
+            files = json.loads(row.diff_json)
             row.status = "active" if decision == "approved" else "rejected"
             row.decided_at = utc_now()
             if decision == "approved":
-                await self._activate_skill(session, row)
+                if _analysis_skill_files(files):
+                    await self._activate_analysis_skill(session, row, files)
+                    target_status = str(files["metadata.yaml"]["status"])
+                    row.status = target_status
+                else:
+                    await self._activate_skill(session, row)
             await session.commit()
         await self.repository.add_audit_event(
             actor_id=owner_id,
@@ -725,6 +1124,25 @@ class GovernanceService:
         )
         return self._memory_proposal_view(row)
 
+    async def delete_memory_proposal(self, owner_id: str, proposal_id: str) -> dict[str, Any]:
+        async with self.database.sessions() as session:
+            row = await session.get(MemoryProposalRow, proposal_id)
+            if row is None or row.owner_id != owner_id:
+                raise LookupError("Memory proposal not found.")
+            if row.status == "active":
+                raise ValueError("Delete the active Memory version instead.")
+            row.status = "deleted"
+            row.value_json = "{}"
+            row.decided_at = utc_now()
+            await session.commit()
+        await self.repository.add_audit_event(
+            actor_id=owner_id,
+            event_type="memory.proposal.deleted",
+            status="success",
+            safe_details={"proposal_id": proposal_id, "key": row.memory_key},
+        )
+        return self._memory_proposal_view(row)
+
     async def list_memories(self, owner_id: str) -> list[dict[str, Any]]:
         now = datetime.now(UTC)
         async with self.database.sessions() as session:
@@ -828,6 +1246,87 @@ class GovernanceService:
                         )
                     )
 
+    async def _activate_analysis_skill(
+        self,
+        session: Any,
+        proposal: SkillProposalRow,
+        files: dict[str, Any],
+    ) -> None:
+        metadata = SkillMetadata.model_validate(files["metadata.yaml"])
+        target = self.settings.ama_analysis_skill_root / metadata.id
+        try:
+            current = self.analysis_skill_registry.get(metadata.id)
+        except LookupError:
+            current = None
+        current_version = current.metadata.version if current else None
+        if current_version != proposal.base_version:
+            raise ValueError("Analysis Skill changed after this proposal was created.")
+        package = SkillPackage(
+            metadata=metadata,
+            instructions=str(files["SKILL.md"]),
+            path=str(target),
+        )
+        issues = [
+            item
+            for item in self.analysis_skill_registry.validate_replacement(package)
+            if item.active
+        ]
+        if issues:
+            raise ValueError("; ".join(item.message for item in issues))
+        target.mkdir(parents=True, exist_ok=True)
+        skill_path = target / "SKILL.md"
+        metadata_path = target / "metadata.yaml"
+        old_skill = skill_path.read_text(encoding="utf-8") if skill_path.exists() else None
+        old_metadata = metadata_path.read_text(encoding="utf-8") if metadata_path.exists() else None
+        skill_temp = target / f".SKILL.{proposal.id}.tmp"
+        metadata_temp = target / f".metadata.{proposal.id}.tmp"
+        skill_temp.write_text(package.instructions, encoding="utf-8")
+        metadata_temp.write_text(
+            yaml.safe_dump(metadata.model_dump(mode="json"), sort_keys=False),
+            encoding="utf-8",
+        )
+        try:
+            os.replace(skill_temp, skill_path)
+            os.replace(metadata_temp, metadata_path)
+            self.analysis_skill_registry.replace(package)
+        except Exception:
+            if old_skill is None:
+                skill_path.unlink(missing_ok=True)
+            else:
+                skill_path.write_text(old_skill, encoding="utf-8")
+            if old_metadata is None:
+                metadata_path.unlink(missing_ok=True)
+            else:
+                metadata_path.write_text(old_metadata, encoding="utf-8")
+            skill_temp.unlink(missing_ok=True)
+            metadata_temp.unlink(missing_ok=True)
+            raise
+        current_rows = list(
+            await session.scalars(
+                select(SkillVersionRow).where(
+                    SkillVersionRow.name == metadata.id,
+                    SkillVersionRow.status == "active",
+                )
+            )
+        )
+        for row in current_rows:
+            row.status = "superseded"
+            row.deprecated_at = utc_now()
+        session.add(
+            SkillVersionRow(
+                id=new_id(),
+                name=metadata.id,
+                version=metadata.version,
+                status=metadata.status.value,
+                path=str(target),
+                content_hash=proposal.payload_hash,
+                proposal_id=proposal.id,
+                rollback_version=proposal.base_version,
+                created_at=utc_now(),
+                deprecated_at=utc_now() if metadata.status == SkillStatus.DEPRECATED else None,
+            )
+        )
+
     async def _activate_skill(self, session: Any, proposal: SkillProposalRow) -> None:
         files: dict[str, Any] = json.loads(proposal.diff_json)
         target = self.settings.ama_skill_registry_root / proposal.name / proposal.version
@@ -869,12 +1368,32 @@ class GovernanceService:
         )
 
     @staticmethod
+    def _knowledge_proposal_view(row: KnowledgeProposalRow) -> dict[str, Any]:
+        return {
+            "id": row.id,
+            "action": row.action,
+            "target_document_id": row.target_document_id,
+            "base_version": row.base_version,
+            "filename": row.filename,
+            "payload": json.loads(row.payload_json),
+            "payload_hash": row.payload_hash,
+            "status": row.status,
+            "created_at": _iso(row.created_at),
+            "decided_at": _iso(row.decided_at),
+        }
+
+    @staticmethod
     def _skill_proposal_view(row: SkillProposalRow) -> dict[str, Any]:
         return {
             "id": row.id,
             "name": row.name,
             "version": row.version,
             "status": row.status,
+            "proposal_type": (
+                "analysis_skill"
+                if _analysis_skill_files(json.loads(row.diff_json))
+                else "taught_skill"
+            ),
             "base_version": row.base_version,
             "payload_hash": row.payload_hash,
             "tool_allowlist": json.loads(row.tool_allowlist_json),
@@ -914,6 +1433,30 @@ class GovernanceService:
             "proposal_id": row.proposal_id,
             "deleted_at": row.deleted_at,
         }
+
+
+def _analysis_skill_files(files: dict[str, Any]) -> bool:
+    metadata = files.get("metadata.yaml")
+    return isinstance(metadata, dict) and "id" in metadata and "analysis_intents" in metadata
+
+
+def _knowledge_markdown(payload: dict[str, Any]) -> str:
+    labels = {
+        "business_context": "Business context",
+        "metric": "Metric",
+        "data_source": "Data source",
+        "table": "Table",
+        "field": "Field",
+        "business_rule": "Business rule",
+        "process": "Process",
+    }
+    label = labels[str(payload["kind"])]
+    return (
+        f"# {payload['name']}\n\n"
+        f"{label}: {payload['name']} = {payload['definition']}\n\n"
+        f"Owner: {payload['owner']}\n\n"
+        f"Source: {payload['source']}\n"
+    )
 
 
 def _skill_files(

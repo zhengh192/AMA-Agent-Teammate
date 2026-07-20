@@ -1,4 +1,5 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { ConfirmAction } from "./ConfirmAction";
 import {
   governanceApi,
   type MemoryInput,
@@ -198,6 +199,7 @@ export function MemoryAdminPage() {
               <div className="approval-actions">
                 {proposal.status === "pending_approval" ? <><button className="approve" type="button" disabled={busy} onClick={() => void act(() => governanceApi.decideMemory(proposal, "approved"))}>Approve exact record</button><button className="reject" type="button" disabled={busy} onClick={() => void act(() => governanceApi.decideMemory(proposal, "rejected"))}>Reject</button></> : null}
                 <button type="button" disabled={busy} onClick={() => useProposalAsDraft(proposal)}>Use as draft</button>
+                {proposal.status !== "active" && proposal.status !== "deleted" ? <ConfirmAction label="Delete proposal" message="Delete this Memory proposal content?" disabled={busy} onConfirm={() => void act(() => governanceApi.deleteMemoryProposal(proposal.id))} /> : null}
               </div>
             </div>
           ))}
@@ -209,7 +211,7 @@ export function MemoryAdminPage() {
           {loading ? <p>Loading Memory versions…</p> : memories.length === 0 ? <p>No Memory versions yet.</p> : memories.map((memory) => (
             <div className="memory-row" key={memory.id}>
               <div className="memory-content"><div className="memory-title"><strong>{memory.key} v{memory.version}</strong><span className={`memory-status ${memory.status}`}>{memory.status}</span></div><small>{memory.scope} · source: {memory.source} · created: {dateLabel(memory.created_at)} · expires: {dateLabel(memory.expires_at)}</small><pre>{JSON.stringify(memory.value, null, 2)}</pre></div>
-              <div className="approval-actions"><button type="button" disabled={busy || memory.status === "deleted"} onClick={() => editMemory(memory)}>Edit</button>{memory.status === "active" ? <button className="reject" type="button" disabled={busy} onClick={() => void act(() => governanceApi.deleteMemory(memory.id))}>Delete / forget</button> : null}</div>
+              <div className="approval-actions"><button type="button" disabled={busy || memory.status === "deleted"} onClick={() => editMemory(memory)}>Edit</button>{memory.status === "active" ? <ConfirmAction label="Delete / forget" message={`Permanently forget ${memory.key} v${memory.version}? The stored value will be erased.`} disabled={busy} onConfirm={() => void act(() => governanceApi.deleteMemory(memory.id))} /> : null}</div>
             </div>
           ))}
         </article>

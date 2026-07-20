@@ -193,6 +193,8 @@ def test_skill_proposal_requires_exact_approval_and_is_audited(
         json={"decision": "approved", "payload_hash": proposal["payload_hash"]},
     )
     assert approved.status_code == 200
+    cannot_delete_active = client.delete(f"/api/skills/proposals/{proposal['id']}")
+    assert cannot_delete_active.status_code == 400
     skill_root = settings.ama_skill_registry_root / proposal["name"] / proposal["version"]
     assert (skill_root / "SKILL.md").is_file()
     assert (skill_root / "metadata.yaml").is_file()
@@ -436,3 +438,95 @@ def test_persistent_fact_correction_creates_memory_not_skill_proposal(
     proposal = client.get("/api/memories/proposals").json()[0]
     assert proposal["status"] == "pending_approval"
     assert proposal["source"] == "agent_correction_candidate"
+
+
+def test_admin_knowledge_entry_revision_and_confirmed_retirement(client: TestClient) -> None:
+    payload = {
+        "kind": "business_context",
+        "name": "Pilot operating scope",
+        "definition": "The pilot supports governed internal data analysis.",
+        "owner": "Super Agent team",
+        "source": "explicit administrator statement",
+        "effective_date": "2026-07-20",
+    }
+    proposal = client.post("/api/knowledge/entries", json=payload)
+    assert proposal.status_code == 200, proposal.text
+    proposed = proposal.json()
+    assert proposed["status"] == "pending_approval"
+    assert client.get("/api/documents").json() == []
+
+    wrong = client.post(
+        f"/api/knowledge/proposals/{proposed['id']}/decision",
+        json={"decision": "approved", "payload_hash": "0" * 64},
+    )
+    assert wrong.status_code == 400
+    approved = client.post(
+        f"/api/knowledge/proposals/{proposed['id']}/decision",
+        json={"decision": "approved", "payload_hash": proposed["payload_hash"]},
+    )
+    assert approved.status_code == 200
+    document = client.get("/api/documents").json()[0]
+    assert document["version"] == 1
+    assert document["source_metadata"]["source"] == "admin_direct_entry"
+    assert document["source_metadata"]["knowledge_entry"]["name"] == payload["name"]
+
+    revised_payload = {
+        **payload,
+        "definition": "The pilot supports governed internal data analysis and cited answers.",
+    }
+    revision = client.patch(f"/api/knowledge/entries/{document['id']}", json=revised_payload).json()
+    before = client.post(
+        "/api/knowledge/ask", json={"question": "What is the pilot operating scope?"}
+    ).json()
+    assert "cited answers" not in before["answer"]
+    client.post(
+        f"/api/knowledge/proposals/{revision['id']}/decision",
+        json={"decision": "approved", "payload_hash": revision["payload_hash"]},
+    )
+    current = client.get("/api/documents").json()[0]
+    assert current["version"] == 2
+    after = client.post(
+        "/api/knowledge/ask", json={"question": "What is the pilot operating scope?"}
+    ).json()
+    assert "cited answers" in after["answer"]
+
+    retirement = client.post(f"/api/documents/{document['id']}/delete-proposal").json()
+    assert retirement["action"] == "delete"
+    client.post(
+        f"/api/knowledge/proposals/{retirement['id']}/decision",
+        json={"decision": "approved", "payload_hash": retirement["payload_hash"]},
+    )
+    assert client.get("/api/documents").json()[0]["status"] == "deleted"
+    unknown = client.post(
+        "/api/knowledge/ask", json={"question": "What is the pilot operating scope?"}
+    ).json()
+    assert unknown["epistemic_label"] == "Unknown"
+
+
+def test_admin_can_delete_inert_memory_proposal(client: TestClient) -> None:
+    proposal = client.post(
+        "/api/memories/proposals",
+        json={
+            "scope": "project",
+            "key": "temporary_draft",
+            "value": {"text": "not yet approved"},
+            "source": "explicit admin entry",
+        },
+    ).json()
+    deleted = client.delete(f"/api/memories/proposals/{proposal['id']}")
+    assert deleted.status_code == 200
+    assert deleted.json()["status"] == "deleted"
+    assert deleted.json()["value"] == {}
+
+
+def test_admin_can_delete_inert_skill_proposal(client: TestClient) -> None:
+    proposal = client.post(
+        "/api/skills/proposals",
+        json={
+            "teaching": "When analyzing pilot adoption, first check completeness and then compare segments."
+        },
+    ).json()
+    deleted = client.delete(f"/api/skills/proposals/{proposal['id']}")
+    assert deleted.status_code == 200
+    assert deleted.json()["status"] == "deleted"
+    assert deleted.json()["diff"] == {}

@@ -76,6 +76,32 @@ class SkillProposalRequest(BaseModel):
     owner: str | None = None
 
 
+class AnalysisSkillProposalRequest(BaseModel):
+    metadata: dict[str, Any]
+    instructions: str = Field(min_length=20, max_length=50_000)
+
+
+class SkillRevisionRequest(BaseModel):
+    instructions: str = Field(min_length=20, max_length=50_000)
+
+
+class KnowledgeEntryRequest(BaseModel):
+    kind: Literal[
+        "business_context",
+        "metric",
+        "data_source",
+        "table",
+        "field",
+        "business_rule",
+        "process",
+    ]
+    name: str = Field(min_length=2, max_length=240)
+    definition: str = Field(min_length=5, max_length=20_000)
+    owner: str = Field(min_length=2, max_length=200)
+    source: str = Field(min_length=2, max_length=500)
+    effective_date: str | None = Field(default=None, max_length=40)
+
+
 class ProposalDecision(BaseModel):
     decision: Literal["approved", "rejected"]
     payload_hash: str

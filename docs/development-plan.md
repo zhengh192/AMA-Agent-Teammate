@@ -65,6 +65,7 @@ Each phase uses a dedicated branch or checkpoint commit, runs independently with
 5. Git-backed Skill structure, tests, version/deprecation/rollback.
 6. Memory scopes, expiry/correction/deletion, context assembly.
 7. Injection, conflict, stale source, unauthorized retrieval, and non-activation tests.
+8. Back-office lifecycle controls for direct add, versioned edit, exact approval, confirmed logical deletion, and runtime Skill reload.
 
 **Done when:** citations resolve to exact source locations; unapproved proposals never affect behavior; rollback/deletion and access boundaries pass.
 

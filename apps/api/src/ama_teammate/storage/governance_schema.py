@@ -40,9 +40,7 @@ class DocumentVersionRow(Base):
 class KnowledgeChunkRow(Base):
     __tablename__ = "knowledge_chunks"
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    document_version_id: Mapped[str] = mapped_column(
-        ForeignKey("document_versions.id"), index=True
-    )
+    document_version_id: Mapped[str] = mapped_column(ForeignKey("document_versions.id"), index=True)
     location_json: Mapped[str] = mapped_column(Text)
     content: Mapped[str] = mapped_column(Text)
     content_hash: Mapped[str] = mapped_column(String(128))
@@ -55,9 +53,7 @@ class KnowledgeChunkRow(Base):
 class KnowledgeRecordRow(Base):
     __tablename__ = "knowledge_records"
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    document_version_id: Mapped[str] = mapped_column(
-        ForeignKey("document_versions.id"), index=True
-    )
+    document_version_id: Mapped[str] = mapped_column(ForeignKey("document_versions.id"), index=True)
     kind: Mapped[str] = mapped_column(String(64), index=True)
     name: Mapped[str] = mapped_column(String(240), index=True)
     definition: Mapped[str] = mapped_column(Text)
@@ -77,6 +73,23 @@ class KnowledgeConflictRow(Base):
     right_record_id: Mapped[str] = mapped_column(ForeignKey("knowledge_records.id"))
     status: Mapped[str] = mapped_column(String(32), default="open")
     created_at: Mapped[datetime]
+
+
+class KnowledgeProposalRow(Base):
+    __tablename__ = "knowledge_proposals"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    action: Mapped[str] = mapped_column(String(24))
+    target_document_id: Mapped[str | None] = mapped_column(
+        ForeignKey("documents.id"), nullable=True, index=True
+    )
+    base_version: Mapped[int | None] = mapped_column(nullable=True)
+    filename: Mapped[str] = mapped_column(String(240))
+    payload_json: Mapped[str] = mapped_column(Text)
+    payload_hash: Mapped[str] = mapped_column(String(128), unique=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    created_at: Mapped[datetime]
+    decided_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
 
 class SkillProposalRow(Base):

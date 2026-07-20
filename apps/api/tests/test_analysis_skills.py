@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sqlite3
 from collections import Counter
 from collections.abc import Iterator
@@ -278,3 +279,83 @@ def test_all_25_evaluation_cases_assert_expected_behavior() -> None:
     results = run_evaluation_suite(suite, registry)
     assert len(results) == 25
     assert [result for result in results if not result.passed] == []
+
+
+def test_admin_analysis_skill_edit_approval_hot_reload_and_deprecation(
+    settings: Settings, tmp_path: Path
+) -> None:
+    skill_root = tmp_path / "managed-analysis-skills"
+    shutil.copytree(ROOT / "skills", skill_root)
+    isolated = settings.model_copy(
+        update={
+            "ama_analysis_skill_root": skill_root,
+            "ama_skill_registry_root": tmp_path / "taught-skills",
+        }
+    )
+    with TestClient(create_app(isolated)) as managed_client:
+        detail = managed_client.get("/api/analysis-skills/mix_rate_decomposition").json()
+        old_version = detail["version"]
+        instructions = detail.pop("instructions") + "\n\nKeep every contribution reconciled.\n"
+        detail.pop("path")
+        detail["description"] = detail["description"] + " Admin-reviewed."
+        proposal_response = managed_client.post(
+            "/api/analysis-skills/proposals",
+            json={"metadata": detail, "instructions": instructions},
+        )
+        assert proposal_response.status_code == 200, proposal_response.text
+        proposal = proposal_response.json()
+        assert proposal["proposal_type"] == "analysis_skill"
+        assert proposal["base_version"] == old_version
+        assert (
+            managed_client.get("/api/analysis-skills/mix_rate_decomposition").json()["version"]
+            == old_version
+        )
+
+        wrong = managed_client.post(
+            f"/api/skills/proposals/{proposal['id']}/decision",
+            json={"decision": "approved", "payload_hash": "0" * 64},
+        )
+        assert wrong.status_code == 400
+        approved = managed_client.post(
+            f"/api/skills/proposals/{proposal['id']}/decision",
+            json={"decision": "approved", "payload_hash": proposal["payload_hash"]},
+        )
+        assert approved.status_code == 200, approved.text
+        current = managed_client.get("/api/analysis-skills/mix_rate_decomposition").json()
+        assert current["version"] != old_version
+        assert current["description"].endswith("Admin-reviewed.")
+        assert "Keep every contribution reconciled." in current["instructions"]
+        assert (
+            managed_client.app.state.analysis_service.planner.skill_registry.get(
+                "mix_rate_decomposition"
+            ).metadata.version
+            == current["version"]
+        )
+
+        deprecation_metadata = {
+            key: value for key, value in current.items() if key not in {"path", "instructions"}
+        }
+        deprecation_metadata["status"] = "deprecated"
+        deprecation = managed_client.post(
+            "/api/analysis-skills/proposals",
+            json={
+                "metadata": deprecation_metadata,
+                "instructions": current["instructions"],
+            },
+        ).json()
+        retired = managed_client.post(
+            f"/api/skills/proposals/{deprecation['id']}/decision",
+            json={"decision": "approved", "payload_hash": deprecation["payload_hash"]},
+        )
+        assert retired.status_code == 200, retired.text
+        assert (
+            managed_client.get("/api/analysis-skills/mix_rate_decomposition").json()["status"]
+            == "deprecated"
+        )
+        active_ids = {
+            item["id"]
+            for item in managed_client.get(
+                "/api/analysis-skills", params={"status": "active"}
+            ).json()
+        }
+        assert "mix_rate_decomposition" not in active_ids

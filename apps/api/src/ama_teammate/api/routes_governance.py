@@ -8,10 +8,12 @@ from pydantic import BaseModel, Field
 from ama_teammate.api.dependencies import DevelopmentUser, get_current_user
 from ama_teammate.errors import AppError
 from ama_teammate.governance.models import (
+    KnowledgeEntryRequest,
     MemoryEditRequest,
     MemoryProposalRequest,
     ProposalDecision,
     SkillProposalRequest,
+    SkillRevisionRequest,
 )
 from ama_teammate.governance.service import GovernanceService
 
@@ -81,6 +83,79 @@ async def list_documents(
     return await _service(request).list_documents(user.id)
 
 
+@router.post("/knowledge/entries")
+async def propose_knowledge_entry(
+    payload: KnowledgeEntryRequest,
+    request: Request,
+    user: DevelopmentUser = Depends(get_current_user),
+) -> dict[str, Any]:
+    try:
+        return await _service(request).propose_knowledge_entry(user.id, **payload.model_dump())
+    except Exception as exc:
+        raise _safe_error(exc) from exc
+
+
+@router.patch("/knowledge/entries/{document_id}")
+async def edit_knowledge_entry(
+    document_id: str,
+    payload: KnowledgeEntryRequest,
+    request: Request,
+    user: DevelopmentUser = Depends(get_current_user),
+) -> dict[str, Any]:
+    try:
+        return await _service(request).propose_knowledge_entry(
+            user.id, **payload.model_dump(), target_document_id=document_id
+        )
+    except Exception as exc:
+        raise _safe_error(exc) from exc
+
+
+@router.get("/knowledge/proposals")
+async def list_knowledge_proposals(
+    request: Request, user: DevelopmentUser = Depends(get_current_user)
+) -> list[dict[str, Any]]:
+    return await _service(request).list_knowledge_proposals(user.id)
+
+
+@router.post("/documents/{document_id}/delete-proposal")
+async def propose_document_delete(
+    document_id: str,
+    request: Request,
+    user: DevelopmentUser = Depends(get_current_user),
+) -> dict[str, Any]:
+    try:
+        return await _service(request).propose_knowledge_delete(user.id, document_id)
+    except Exception as exc:
+        raise _safe_error(exc) from exc
+
+
+@router.post("/knowledge/proposals/{proposal_id}/decision")
+async def decide_knowledge_proposal(
+    proposal_id: str,
+    payload: ProposalDecision,
+    request: Request,
+    user: DevelopmentUser = Depends(get_current_user),
+) -> dict[str, Any]:
+    try:
+        return await _service(request).decide_knowledge_proposal(
+            user.id, proposal_id, payload.payload_hash, payload.decision
+        )
+    except Exception as exc:
+        raise _safe_error(exc) from exc
+
+
+@router.delete("/knowledge/proposals/{proposal_id}")
+async def delete_knowledge_proposal(
+    proposal_id: str,
+    request: Request,
+    user: DevelopmentUser = Depends(get_current_user),
+) -> dict[str, Any]:
+    try:
+        return await _service(request).delete_knowledge_proposal(user.id, proposal_id)
+    except Exception as exc:
+        raise _safe_error(exc) from exc
+
+
 @router.post("/documents/{document_id}/decision")
 async def decide_document(
     document_id: str,
@@ -121,6 +196,33 @@ async def propose_skill(
 ) -> dict[str, Any]:
     try:
         return await _service(request).propose_skill(user.id, payload.teaching)
+    except Exception as exc:
+        raise _safe_error(exc) from exc
+
+
+@router.post("/skills/proposals/{proposal_id}/revision")
+async def revise_skill(
+    proposal_id: str,
+    payload: SkillRevisionRequest,
+    request: Request,
+    user: DevelopmentUser = Depends(get_current_user),
+) -> dict[str, Any]:
+    try:
+        return await _service(request).revise_taught_skill(
+            user.id, proposal_id, payload.instructions
+        )
+    except Exception as exc:
+        raise _safe_error(exc) from exc
+
+
+@router.delete("/skills/proposals/{proposal_id}")
+async def delete_skill_proposal(
+    proposal_id: str,
+    request: Request,
+    user: DevelopmentUser = Depends(get_current_user),
+) -> dict[str, Any]:
+    try:
+        return await _service(request).delete_skill_proposal(user.id, proposal_id)
     except Exception as exc:
         raise _safe_error(exc) from exc
 
@@ -188,6 +290,18 @@ async def propose_memory(
             payload.source,
             payload.expires_at,
         )
+    except Exception as exc:
+        raise _safe_error(exc) from exc
+
+
+@router.delete("/memories/proposals/{proposal_id}")
+async def delete_memory_proposal(
+    proposal_id: str,
+    request: Request,
+    user: DevelopmentUser = Depends(get_current_user),
+) -> dict[str, Any]:
+    try:
+        return await _service(request).delete_memory_proposal(user.id, proposal_id)
     except Exception as exc:
         raise _safe_error(exc) from exc
 

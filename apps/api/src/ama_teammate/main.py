@@ -135,7 +135,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.providers = providers
         app.state.analysis_service = analysis_runtime.service
         governance_service = GovernanceService(
-            resolved_settings, database, repository, embedding_provider
+            resolved_settings, database, repository, embedding_provider, skill_registry
         )
         app.state.semantic_metadata_registry = semantic_registry
         app.state.governance_service = governance_service

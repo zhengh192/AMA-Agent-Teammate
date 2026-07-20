@@ -48,6 +48,40 @@ export interface AnalysisSkillView {
   path: string;
 }
 
+export interface AnalysisSkillDetail extends AnalysisSkillView {
+  instructions: string;
+  reviewer: string;
+  created_at: string;
+  updated_at: string;
+  effective_from: string;
+  effective_to: string | null;
+  aliases: string[];
+  trigger_examples: { en: string[]; zh: string[] };
+  inputs: Array<Record<string, unknown>>;
+  outputs: Array<Record<string, unknown>>;
+}
+
+export interface KnowledgeEntryInput {
+  kind: "business_context" | "metric" | "data_source" | "table" | "field" | "business_rule" | "process";
+  name: string;
+  definition: string;
+  owner: string;
+  source: string;
+  effective_date: string | null;
+}
+
+export interface KnowledgeProposal {
+  id: string;
+  action: "create" | "update" | "delete";
+  target_document_id: string | null;
+  base_version: number | null;
+  filename: string;
+  payload: Partial<KnowledgeEntryInput> & { name?: string };
+  payload_hash: string;
+  status: string;
+  created_at: string;
+  decided_at: string | null;
+}
 export interface BusinessRuleView {
   kind: "business_rule";
   id: string;
@@ -102,6 +136,7 @@ export interface SkillProposal {
   name: string;
   version: string;
   status: string;
+  proposal_type: "analysis_skill" | "taught_skill";
   payload_hash: string;
   tool_allowlist: string[];
   diff: Record<string, unknown>;
@@ -164,7 +199,36 @@ export const governanceApi = {
       body: JSON.stringify({ decision, payload_hash: document.content_hash }),
     }));
   },
-  async ask(question: string): Promise<KnowledgeAnswer> {
+  async knowledgeProposals(): Promise<KnowledgeProposal[]> {
+    return json(await fetch("/api/knowledge/proposals"));
+  },
+  async proposeKnowledge(input: KnowledgeEntryInput): Promise<KnowledgeProposal> {
+    return json(await fetch("/api/knowledge/entries", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }));
+  },
+  async editKnowledge(id: string, input: KnowledgeEntryInput): Promise<KnowledgeProposal> {
+    return json(await fetch(`/api/knowledge/entries/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }));
+  },
+  async proposeKnowledgeDelete(id: string): Promise<KnowledgeProposal> {
+    return json(await fetch(`/api/documents/${id}/delete-proposal`, { method: "POST" }));
+  },
+  async decideKnowledge(proposal: KnowledgeProposal, decision: "approved" | "rejected") {
+    return json(await fetch(`/api/knowledge/proposals/${proposal.id}/decision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision, payload_hash: proposal.payload_hash }),
+    }));
+  },
+  async deleteKnowledgeProposal(id: string) {
+    return json(await fetch(`/api/knowledge/proposals/${id}`, { method: "DELETE" }));
+  },  async ask(question: string): Promise<KnowledgeAnswer> {
     return json(await fetch("/api/knowledge/ask", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -185,7 +249,19 @@ export const governanceApi = {
   },  async analysisSkills(): Promise<AnalysisSkillView[]> {
     return json(await fetch("/api/analysis-skills"));
   },
-  async skillProposals(): Promise<SkillProposal[]> {
+  async analysisSkill(id: string): Promise<AnalysisSkillDetail> {
+    return json(await fetch(`/api/analysis-skills/${id}`));
+  },
+  async proposeAnalysisSkill(
+    metadata: Record<string, unknown>,
+    instructions: string,
+  ): Promise<SkillProposal> {
+    return json(await fetch("/api/analysis-skills/proposals", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ metadata, instructions }),
+    }));
+  },  async skillProposals(): Promise<SkillProposal[]> {
     return json(await fetch("/api/skills/proposals"));
   },
   async proposeSkill(teaching: string): Promise<SkillProposal> {
@@ -195,7 +271,16 @@ export const governanceApi = {
       body: JSON.stringify({ teaching }),
     }));
   },
-  async decideSkill(proposal: SkillProposal, decision: "approved" | "rejected") {
+  async reviseSkill(proposal: SkillProposal, instructions: string): Promise<SkillProposal> {
+    return json(await fetch(`/api/skills/proposals/${proposal.id}/revision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ instructions }),
+    }));
+  },
+  async deleteSkillProposal(id: string) {
+    return json(await fetch(`/api/skills/proposals/${id}`, { method: "DELETE" }));
+  },  async decideSkill(proposal: SkillProposal, decision: "approved" | "rejected") {
     return json<SkillProposal>(await fetch(`/api/skills/proposals/${proposal.id}/decision`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -208,7 +293,9 @@ export const governanceApi = {
   async memoryProposals(): Promise<MemoryProposal[]> {
     return json(await fetch("/api/memories/proposals"));
   },
-  async memories(): Promise<MemoryView[]> {
+  async deleteMemoryProposal(id: string) {
+    return json(await fetch(`/api/memories/proposals/${id}`, { method: "DELETE" }));
+  },  async memories(): Promise<MemoryView[]> {
     return json(await fetch("/api/memories"));
   },
   async proposeMemory(input: MemoryInput): Promise<MemoryProposal> {

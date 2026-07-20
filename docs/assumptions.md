@@ -143,3 +143,10 @@ These change architecture or security and require owner confirmation:
 - The production read-only schema inspection confirmed turn_log.bot_thinking, turn_log.symptom, and turn_log.flow_step are physically present. Agent stage is derived from the last turn's bot_thinking JSON agent_type; symptom and step use their physical turn columns. Missing values remain explicit Unknown buckets.
 - The active case_journey_diagnostics@1.1.0 Skill owns hierarchy order, baseline aggregation, ranking method, display depth, small-sample threshold, progressive drill-down behavior, evidence style, and response language. Future analytical tuning should update that versioned Skill contract rather than hard-code a special incident.
 - User-facing Chinese results use Chinese explanatory prose and numbered evidence labels. Internal evidence UUIDs remain available only in trace/audit data. Stage concentration is measured evidence, not causal proof; response-theme review starts only after a bounded abnormal branch is identified.
+
+## A-32 - Back-office governed asset lifecycle
+
+- The local governance console may directly create and revise Knowledge, analysis Skill, taught Skill, and Memory proposals. Proposed content is inert until an exact payload-hash decision is recorded.
+- Knowledge direct entries are stored as cited Markdown source versions after approval. Updates preserve the active version until approval; retirement is a separate delete proposal that de-indexes the source only after approval.
+- Installed analysis Skill edits produce a patch version, pass the strict package schema and cross-Skill reference validation, write through temporary files, and hot-reload the existing planner registry. A user-facing delete is a recoverable deprecation version rather than physical history removal.
+- Memory and unapproved proposal deletion erase the stored value or proposal content while retaining a bounded audit envelope. Every destructive control requires an explicit, cancelable confirmation in the administration UI.
