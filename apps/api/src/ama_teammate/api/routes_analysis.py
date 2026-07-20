@@ -56,7 +56,7 @@ async def decide_analysis_approval(
             status_code=409,
             code="run_not_waiting_for_approval",
             category="validation",
-            message="This run is not waiting for SQL approval.",
+            message="This run is not waiting for approval.",
         )
     generator = get_phase_two_chat_service(request).resume_approval_stream(
         run_id, user.id, payload.model_dump()

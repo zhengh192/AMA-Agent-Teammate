@@ -39,6 +39,7 @@ class DataSourceConfig(BaseModel):
     allowed_schemas: set[str] = Field(default_factory=lambda: {"main"})
     tables: dict[str, TableCatalog]
     denied_columns: set[str] = Field(default_factory=set)
+    aggregate_only_columns: set[str] = Field(default_factory=set)
     timeout_seconds: float = Field(default=10.0, gt=0, le=120)
     max_rows: int = Field(default=1_000, gt=0, le=100_000)
     max_result_bytes: int = Field(default=1_048_576, gt=0)
@@ -52,6 +53,7 @@ class DataSourceConfig(BaseModel):
             "allowed_schemas": sorted(self.allowed_schemas),
             "allowed_tables": sorted(self.tables),
             "denied_columns": sorted(self.denied_columns),
+            "aggregate_only_columns": sorted(self.aggregate_only_columns),
             "timeout_seconds": self.timeout_seconds,
             "max_rows": self.max_rows,
             "max_result_bytes": self.max_result_bytes,

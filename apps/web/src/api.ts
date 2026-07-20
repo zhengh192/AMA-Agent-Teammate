@@ -21,7 +21,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ title }),
     }),
-  listMessages: (sessionId: string) =>
+  deleteSession: async (sessionId: string) => {
+    const response = await fetch(`/api/sessions/${sessionId}`, { method: "DELETE" });
+    if (!response.ok) throw new Error(`Unable to delete session (${response.status})`);
+  },  listMessages: (sessionId: string) =>
     jsonRequest<ChatMessage[]>(`/api/sessions/${sessionId}/messages`),
   getTrace: (runId: string) => jsonRequest<TraceEvent[]>(`/api/runs/${runId}/trace`),
 };

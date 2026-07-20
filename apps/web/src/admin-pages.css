@@ -73,3 +73,30 @@
   .format-chip { white-space: normal; }
   .lifecycle-steps, .principle-grid { grid-template-columns: 1fr; }
 }
+
+.memory-editor { margin-bottom: 14px; }
+.memory-editor-form { display: grid; grid-template-columns: 160px 1fr; gap: 12px; margin-top: 16px; }
+.memory-editor-form label { display: grid; gap: 6px; color: #526578; font-size: 11px; font-weight: 700; }
+.memory-editor-form input, .memory-editor-form select, .memory-editor-form textarea { box-sizing: border-box; width: 100%; min-width: 0; border: 1px solid #ccd6df; border-radius: 8px; padding: 9px 10px; background: #fff; color: #263b52; font: inherit; font-weight: 400; }
+.memory-editor-form textarea { margin: 0; resize: vertical; }
+.memory-value-field { grid-column: 1 / -1; }
+.memory-editor-actions { display: flex; align-items: end; justify-content: flex-end; }
+.memory-grid { align-items: start; }
+.memory-count { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 50%; background: #eef2f6; color: #40566c; font-size: 12px; font-weight: 700; }
+.memory-content { min-width: 0; flex: 1; }
+.memory-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.memory-status { border-radius: 999px; padding: 3px 7px; background: #eef2f6; color: #526578; font-size: 10px; font-weight: 700; }
+.memory-status.active { background: #e3f5e9; color: #21663a; }
+.memory-status.pending_approval { background: #fff1c7; color: #775600; }
+.memory-status.rejected, .memory-status.deleted { background: #fae5e5; color: #8a3030; }
+.memory-status.expired, .memory-status.superseded { background: #edf0f4; color: #66778a; }
+.memory-row { align-items: flex-start; }
+.memory-row pre { max-height: 180px; margin: 8px 0 0; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: #33495d; font: 11px/1.5 ui-monospace, monospace; }
+.memory-row .approval-actions { display: flex; flex: none; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+
+@media (max-width: 700px) {
+  .memory-editor-form { grid-template-columns: 1fr; }
+  .memory-value-field { grid-column: auto; }
+  .memory-editor-actions { justify-content: stretch; }
+  .memory-editor-actions button { width: 100%; }
+}

@@ -22,7 +22,9 @@ from ama_teammate.analysis_skills.models import (
 class AnalysisSkillValidationError(ValueError):
     def __init__(self, issues: list[SkillValidationIssue]) -> None:
         self.issues = issues
-        super().__init__("Analysis skill validation failed: " + "; ".join(i.message for i in issues))
+        super().__init__(
+            "Analysis skill validation failed: " + "; ".join(i.message for i in issues)
+        )
 
 
 class AnalysisSkillRegistry:
@@ -39,7 +41,10 @@ class AnalysisSkillRegistry:
         if not root.exists():
             return cls([]), [
                 SkillValidationIssue(
-                    path=str(root), code="root_missing", message="Analysis skill root is missing.", active=True
+                    path=str(root),
+                    code="root_missing",
+                    message="Analysis skill root is missing.",
+                    active=True,
                 )
             ]
         for directory in sorted(path for path in root.iterdir() if path.is_dir()):
@@ -108,7 +113,9 @@ class AnalysisSkillRegistry:
             score = sum(1 for token in tokens if token in haystack)
             if score:
                 results.append((score, package))
-        return [item for _, item in sorted(results, key=lambda pair: (-pair[0], pair[1].metadata.id))]
+        return [
+            item for _, item in sorted(results, key=lambda pair: (-pair[0], pair[1].metadata.id))
+        ]
 
     def build_execution_plan(
         self, analysis_kind: AnalysisKind, question: str
@@ -196,17 +203,76 @@ class AnalysisSkillRegistry:
 
 
 _INTENT_SKILLS: dict[AnalysisKind, list[str]] = {
-    AnalysisKind.TREND: ["data_quality_check", "metric_query", "trend_anomaly_analysis", "analysis_reporting"],
-    AnalysisKind.PERIOD_COMPARISON: ["data_quality_check", "metric_query", "period_comparison", "analysis_reporting"],
-    AnalysisKind.SEGMENT_BREAKDOWN: ["data_quality_check", "metric_query", "contribution_analysis", "analysis_reporting"],
-    AnalysisKind.CONTRIBUTION: ["data_quality_check", "metric_query", "contribution_analysis", "analysis_reporting"],
-    AnalysisKind.FUNNEL_RATE: ["data_quality_check", "metric_query", "funnel_analysis", "analysis_reporting"],
+    AnalysisKind.DETAIL: ["data_quality_check", "analysis_reporting"],
+    AnalysisKind.TREND: [
+        "data_quality_check",
+        "metric_query",
+        "trend_anomaly_analysis",
+        "analysis_reporting",
+    ],
+    AnalysisKind.PERIOD_COMPARISON: [
+        "data_quality_check",
+        "metric_query",
+        "period_comparison",
+        "analysis_reporting",
+    ],
+    AnalysisKind.SEGMENT_BREAKDOWN: [
+        "data_quality_check",
+        "metric_query",
+        "contribution_analysis",
+        "analysis_reporting",
+    ],
+    AnalysisKind.CONTRIBUTION: [
+        "data_quality_check",
+        "metric_query",
+        "contribution_analysis",
+        "analysis_reporting",
+    ],
+    AnalysisKind.FUNNEL_RATE: [
+        "data_quality_check",
+        "metric_query",
+        "funnel_analysis",
+        "analysis_reporting",
+    ],
     AnalysisKind.QUALITY: ["data_quality_check", "analysis_reporting"],
-    AnalysisKind.ANOMALY: ["data_quality_check", "metric_query", "trend_anomaly_analysis", "analysis_reporting"],
-    AnalysisKind.SEASONALITY: ["data_quality_check", "metric_query", "trend_anomaly_analysis", "analysis_reporting"],
-    AnalysisKind.CORRELATION: ["data_quality_check", "metric_query", "cross_source_reconciliation", "analysis_reporting"],
-    AnalysisKind.MIX_RATE_DECOMPOSITION: ["data_quality_check", "metric_query", "mix_rate_decomposition", "analysis_reporting"],
-    AnalysisKind.CROSS_SOURCE_RECONCILIATION: ["data_quality_check", "metric_query", "cross_source_reconciliation", "analysis_reporting"],
+    AnalysisKind.ANOMALY: [
+        "data_quality_check",
+        "metric_query",
+        "trend_anomaly_analysis",
+        "analysis_reporting",
+    ],
+    AnalysisKind.SEASONALITY: [
+        "data_quality_check",
+        "metric_query",
+        "trend_anomaly_analysis",
+        "analysis_reporting",
+    ],
+    AnalysisKind.CORRELATION: [
+        "data_quality_check",
+        "metric_query",
+        "cross_source_reconciliation",
+        "analysis_reporting",
+    ],
+    AnalysisKind.MIX_RATE_DECOMPOSITION: [
+        "data_quality_check",
+        "metric_query",
+        "mix_rate_decomposition",
+        "analysis_reporting",
+    ],
+    AnalysisKind.CROSS_SOURCE_RECONCILIATION: [
+        "data_quality_check",
+        "metric_query",
+        "cross_source_reconciliation",
+        "analysis_reporting",
+    ],
+    AnalysisKind.JOURNEY_DIAGNOSTIC: [
+        "data_quality_check",
+        "metric_query",
+        "funnel_analysis",
+        "trend_anomaly_analysis",
+        "case_journey_diagnostics",
+        "analysis_reporting",
+    ],
 }
 
 

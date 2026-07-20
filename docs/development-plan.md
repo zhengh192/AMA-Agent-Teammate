@@ -70,14 +70,14 @@ Each phase uses a dedicated branch or checkpoint commit, runs independently with
 
 ## Phase 4 — Data quality, Jira, and background jobs
 
-1. Read-only Jira connector and mock issues.
+1. Bounded Jira read/search connector plus approval-gated issue creation and status transition.
 2. Deterministic recovery-context completeness and clarification.
 3. Data-quality check definitions and pre/post-incident evidence.
 4. Asynchronous job state machine, worker lease, retry, checkpoint, cancellation, timeout, history.
 5. Exact-plan approval before job creation/execution.
 6. Operational dashboards, alerts, and failure/recovery tests.
 
-**Done when:** a mock Jira issue yields an owner-confirmed recovery plan; jobs are bounded, resumable, cancellable, auditable, and cannot perform external writes.
+**Done when:** Jira reads/searches are bounded; create/transition writes require exact persisted approval and are auditable; a mock issue yields an owner-confirmed recovery plan; background jobs are bounded, resumable, cancellable, and cannot perform unapproved external writes.
 
 ## Phase 5 — Teams notification and production hardening
 

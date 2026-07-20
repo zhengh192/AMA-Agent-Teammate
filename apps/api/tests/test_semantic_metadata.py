@@ -71,9 +71,10 @@ def test_ambiguous_active_metric_alias_requires_clarification() -> None:
         "test.booked_revenue",
         "test.billed_revenue",
     }
-    assert ambiguous.resolve_metric(
-        "shared total", context="Use test.booked_revenue"
-    ).id == "test.booked_revenue"
+    assert (
+        ambiguous.resolve_metric("shared total", context="Use test.booked_revenue").id
+        == "test.booked_revenue"
+    )
 
 
 @pytest.mark.asyncio
@@ -136,6 +137,8 @@ def test_semantic_metadata_api_lists_retrieves_and_searches(client: Any) -> None
     searched = client.get("/api/semantic-metadata/search", params={"q": "working hours transfer"})
     assert searched.status_code == 200
     assert searched.json()[0]["id"] == "super_agent.whtr"
+
+
 @pytest.mark.asyncio
 async def test_uat_natural_language_planning_uses_approved_physical_metric() -> None:
     visit_table = TableCatalog(
@@ -143,6 +146,7 @@ async def test_uat_natural_language_planning_uses_approved_physical_metric() -> 
         columns=[
             ColumnCatalog(name="session_id", data_type="varchar(255)", nullable=True),
             ColumnCatalog(name="start_time", data_type="datetime(6)", nullable=True),
+            ColumnCatalog(name="source", data_type="string", nullable=True),
             ColumnCatalog(name="channel", data_type="string", nullable=True),
             ColumnCatalog(name="intent_type", data_type="string", nullable=True),
             ColumnCatalog(name="agent_working_hour", data_type="string", nullable=True),
@@ -151,6 +155,10 @@ async def test_uat_natural_language_planning_uses_approved_physical_metric() -> 
             ColumnCatalog(name="is_foc", data_type="string", nullable=True),
             ColumnCatalog(name="survey_score", data_type="double", nullable=True),
             ColumnCatalog(name="survey_resolved", data_type="string", nullable=True),
+            ColumnCatalog(name="eticket_case_number", data_type="string", nullable=True),
+            ColumnCatalog(name="serial_number", data_type="string", nullable=True),
+            ColumnCatalog(name="pd_triggered", data_type="string", nullable=True),
+            ColumnCatalog(name="is_cid", data_type="string", nullable=True),
         ],
     )
     source = DataSourceConfig(
@@ -161,6 +169,7 @@ async def test_uat_natural_language_planning_uses_approved_physical_metric() -> 
         secret_ref="env:super_agent_uat",
         allowed_schemas={"sa_logs"},
         tables={"visit_log": visit_table},
+        aggregate_only_columns=set(),
         max_rows=500,
         max_result_bytes=262_144,
     )
@@ -169,27 +178,97 @@ async def test_uat_natural_language_planning_uses_approved_physical_metric() -> 
     providers = create_provider_bundle(Settings(_env_file=None, ama_provider="mock"))
     planner = AnalysisPlanner(providers, connectors, SQLSafetyGateway(), semantic)
     context = planner._approved_semantic_context("How many Super Agent UAT sessions are there?")
-    assert [item["id"] for item in context["metrics"]] == [
-        "super_agent_uat.session_count"
-    ]
+    assert [item["id"] for item in context["metrics"]] == ["super_agent_uat.session_count"]
     try:
-        plan = await planner.build("run-uat", "How many Super Agent UAT sessions are there in total?")
+        plan = await planner.build(
+            "run-uat", "How many Super Agent UAT sessions are there in total?"
+        )
     finally:
         await providers.provider.close()
 
     assert plan.metric_definition.id == "super_agent_uat.session_count"
-    assert plan.metric_definition.version == "1.0.0"
+    assert plan.metric_definition.version == "1.1.0"
     assert plan.intent.source_ids == ["super_agent_uat"]
     assert plan.intent.start_date == "2026-06-01"
     assert plan.intent.end_date == (date.today() + timedelta(days=1)).isoformat()
     assert plan.queries[0].referenced_tables == ["visit_log"]
-    assert "COUNT(DISTINCT session_id)" in plan.queries[0].normalized_sql
+    assert "COUNT(1)" in plan.queries[0].normalized_sql
+    assert "source = 'pcs-redirect'" in plan.queries[0].normalized_sql
+    assert "channel" in plan.queries[0].normalized_sql
+    assert "IS NULL" in plan.queries[0].normalized_sql
+    assert [item.id for item in plan.business_rule_definitions] == [
+        "super_agent.valid_user_traffic_population"
+    ]
+    assert plan.business_rule_definitions[0].version == "1.0.0"
+    assert plan.approval_payload()["business_rule_definitions"][0]["version"] == "1.0.0"
     assert plan.queries[0].dialect == "mysql"
 
     working = await planner.build("run-whtr", "Show Super Agent UAT WHTR")
-    assert working.metric_definition.id == "super_agent.whtr"
-    assert working.metric_definition.version == "0.9.30"
-    assert working.intent.metadata_confidence == "working_assumption"
+    assert working.metric_definition.id == "super_agent_uat.whtr"
+    assert working.metric_definition.version == "1.0.0"
+    assert working.intent.metadata_confidence == "authoritative"
     assert working.intent.assumptions
     assert "agent_working_hour" in working.queries[0].normalized_sql
     assert "to_agent_flag" in working.queries[0].normalized_sql
+
+    daily = await planner.build("run-whtr-daily", "Show Super Agent UAT WHTR by day")
+    assert daily.intent.analysis_type.value == "trend"
+    assert daily.intent.dimensions == ["period"]
+    assert daily.intent.chart_type.value == "line"
+    assert "CAST(start_time AS DATE) AS period" in daily.queries[0].normalized_sql
+    assert " AS value" in daily.queries[0].normalized_sql
+    assert "GROUP BY CAST(start_time AS DATE)" in daily.queries[0].normalized_sql
+
+    daily_channel = await planner.build(
+        "run-whtr-daily-channel", "Show Super Agent UAT WHTR by day and channel"
+    )
+    assert daily_channel.intent.dimensions == ["period", "channel"]
+    assert "COALESCE(channel, 'Unknown') AS channel" in daily_channel.queries[0].normalized_sql
+    case_daily = await planner.build("run-case-creation-daily", "case creation rate daily trend")
+    assert case_daily.metric_definition.id == "super_agent_uat.case_creation_rate"
+    assert case_daily.intent.metric == "Case Creation Rate"
+    assert case_daily.intent.dimensions == ["period"]
+    sql = case_daily.queries[0].normalized_sql
+    assert "CAST(start_time AS DATE) AS period" in sql
+    assert "eticket_case_number" in sql
+    assert "serial_number" in sql
+    assert "pd_triggered = 'yes'" in sql
+    assert "is_cid = '1'" in sql
+    assert "channel" in sql
+    assert " AS value" in sql
+
+    cid = await planner.build("run-cid-share", "能看到数据里目前cid的session占比多少吗")
+    assert cid.metric_definition.id == "super_agent_uat.cid_session_rate"
+    assert cid.metric_definition.version == "1.0.0"
+    assert cid.intent.metric == "CID Session Rate"
+    cid_sql = cid.queries[0].normalized_sql
+    assert "is_cid = '1'" in cid_sql
+    assert "NOT session_id IS NULL" in cid_sql
+    assert "channel IS NOT NULL" not in cid_sql
+    detail = await planner.build(
+        "run-visit-detail",
+        "Show Super Agent UAT visit_log detail rows for session_id, serial_number, "
+        "eticket_case_number limit 7",
+    )
+    assert detail.intent.analysis_type.value == "detail"
+    assert detail.intent.detail_table == "visit_log"
+    assert detail.intent.detail_fields == [
+        "session_id",
+        "eticket_case_number",
+        "serial_number",
+    ]
+    assert detail.intent.detail_limit == 7
+    assert detail.intent.chart_type.value == "table"
+    assert detail.metric_definition.definition_type.value == "dataset"
+    assert detail.metric_definition.id == "super_agent_uat.visit_log"
+    assert detail.queries[0].max_rows == 7
+    assert detail.queries[0].referenced_columns == [
+        "channel",
+        "eticket_case_number",
+        "serial_number",
+        "session_id",
+        "source",
+        "start_time",
+    ]
+    assert "*" not in detail.queries[0].normalized_sql
+    assert "ORDER BY `start_time` DESC" in detail.queries[0].normalized_sql

@@ -6,6 +6,7 @@ from sqlglot import exp, parse
 from sqlglot.errors import ParseError
 
 from ama_teammate.data_access.models import DataSourceConfig
+from ama_teammate.sql_policy.aggregate_only import aggregate_only_violations
 from ama_teammate.sql_policy.models import QueryProposal, SQLPolicyViolation, ValidatedQuery
 
 POLICY_VERSION = "sql-readonly-v1"
@@ -49,6 +50,10 @@ class SQLSafetyGateway:
             raise SQLPolicyViolation("schema_not_allowed", "SQL references an unapproved schema.")
 
         allowed_function_types = (
+            exp.Lower,
+            exp.Nullif,
+            exp.Concat,
+            exp.RowNumber,
             exp.Sum,
             exp.Count,
             exp.Avg,
@@ -56,6 +61,7 @@ class SQLSafetyGateway:
             exp.Max,
             exp.Coalesce,
             exp.Cast,
+            exp.Extract,
             exp.Case,
             exp.If,
             exp.And,
@@ -73,6 +79,11 @@ class SQLSafetyGateway:
         denied = {name.lower() for name in source.denied_columns}
         if column_names & denied:
             raise SQLPolicyViolation("column_denied", "SQL references a denied column.")
+        if aggregate_only_violations(statement, source.aggregate_only_columns):
+            raise SQLPolicyViolation(
+                "column_aggregate_only",
+                "SQL references a protected column outside an approved aggregate expression.",
+            )
         available_columns = set().union(
             *(source.tables[name].column_names for name in table_names if name in source.tables)
         )
@@ -154,9 +165,10 @@ class SQLSafetyGateway:
 
     @staticmethod
     def _select_aliases(statement: exp.Select) -> Iterable[str]:
-        for expression in statement.expressions:
-            if expression.alias:
-                yield expression.alias
+        for select in statement.find_all(exp.Select):
+            for expression in select.expressions:
+                if expression.alias:
+                    yield expression.alias
 
     @staticmethod
     def _literal_int(expression: exp.Expression | None) -> int | None:

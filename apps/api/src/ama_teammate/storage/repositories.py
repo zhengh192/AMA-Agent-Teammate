@@ -13,6 +13,7 @@ from ama_teammate.storage.schema import (
     AgentRunRow,
     AuditEventRow,
     ChatSessionRow,
+    DeletedChatSessionRow,
     GraphCheckpointRefRow,
     MessageRow,
     UserRow,
@@ -60,6 +61,11 @@ class Repository:
             result = await session.scalars(
                 select(ChatSessionRow)
                 .where(ChatSessionRow.user_id == user_id)
+                .where(
+                    ~select(DeletedChatSessionRow.session_id)
+                    .where(DeletedChatSessionRow.session_id == ChatSessionRow.id)
+                    .exists()
+                )
                 .order_by(ChatSessionRow.updated_at.desc())
             )
             return result.all()
@@ -70,11 +76,37 @@ class Repository:
                 ChatSessionRow | None,
                 await session.scalar(
                     select(ChatSessionRow).where(
-                        ChatSessionRow.id == session_id, ChatSessionRow.user_id == user_id
+                        ChatSessionRow.id == session_id,
+                        ChatSessionRow.user_id == user_id,
+                        ~select(DeletedChatSessionRow.session_id)
+                        .where(DeletedChatSessionRow.session_id == ChatSessionRow.id)
+                        .exists(),
                     )
                 ),
             )
 
+    async def delete_chat_session(self, session_id: str, user_id: str) -> bool:
+        async with self.database.sessions() as session:
+            row = await session.scalar(
+                select(ChatSessionRow).where(
+                    ChatSessionRow.id == session_id,
+                    ChatSessionRow.user_id == user_id,
+                    ~select(DeletedChatSessionRow.session_id)
+                    .where(DeletedChatSessionRow.session_id == ChatSessionRow.id)
+                    .exists(),
+                )
+            )
+            if row is None:
+                return False
+            session.add(
+                DeletedChatSessionRow(
+                    session_id=session_id,
+                    deleted_by=user_id,
+                    deleted_at=utc_now(),
+                )
+            )
+            await session.commit()
+            return True
     async def add_message(
         self,
         session_id: str,

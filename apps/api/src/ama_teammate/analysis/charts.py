@@ -18,7 +18,16 @@ class ChartValidationError(ValueError):
 
 
 class PlotlySpecValidator:
-    allowed_trace_types = {"table", "indicator", "scatter", "bar", "histogram", "heatmap", "waterfall", "funnel"}
+    allowed_trace_types = {
+        "table",
+        "indicator",
+        "scatter",
+        "bar",
+        "histogram",
+        "heatmap",
+        "waterfall",
+        "funnel",
+    }
     forbidden_keys = {"url", "src", "images", "frames", "transforms"}
 
     def validate(self, figure: dict[str, Any]) -> None:
@@ -62,6 +71,8 @@ def recommend_chart(analysis_kind: AnalysisKind, row_count: int) -> ChartKind | 
         return ChartKind.LINE if row_count > 1 else None
     if analysis_kind == AnalysisKind.PERIOD_COMPARISON:
         return ChartKind.BAR if row_count > 1 else ChartKind.KPI
+    if analysis_kind == AnalysisKind.JOURNEY_DIAGNOSTIC:
+        return ChartKind.BAR
     if analysis_kind == AnalysisKind.SEGMENT_BREAKDOWN:
         return ChartKind.BAR
     if analysis_kind == AnalysisKind.CONTRIBUTION:
@@ -115,7 +126,11 @@ class ChartBuilder:
             return self._table_figure(intent, dataset)
         if chart_type == ChartKind.KPI:
             rate = computation.summary.get("rate")
-            value = rate if isinstance(rate, (int, float)) else computation.summary.get("last", 0)
+            value = (
+                rate
+                if isinstance(rate, (int, float))
+                else computation.summary.get("value", computation.summary.get("last", 0))
+            )
             return {
                 "data": [
                     {
@@ -129,17 +144,44 @@ class ChartBuilder:
             }
         if chart_type in {ChartKind.LINE, ChartKind.BAR}:
             trace_type = "scatter" if chart_type == ChartKind.LINE else "bar"
-            x_column = "channel" if "channel" in dataset.columns else "period"
             y_column = "revenue" if "revenue" in dataset.columns else "value"
-            trace: dict[str, Any] = {
-                "type": trace_type,
-                "x": [row.get(x_column) for row in dataset.rows],
-                "y": [row.get(y_column) for row in dataset.rows],
-                "name": intent.metric,
-            }
-            if chart_type == ChartKind.LINE:
-                trace["mode"] = "lines+markers"
-            return {"data": [trace], "layout": self._layout(intent)}
+            dimension_columns = [item for item in intent.dimensions if item in dataset.columns]
+            if "period" in dataset.columns:
+                x_column = "period"
+            elif dimension_columns:
+                x_column = dimension_columns[0]
+            elif "segment" in dataset.columns:
+                x_column = "segment"
+            elif "channel" in dataset.columns:
+                x_column = "channel"
+            else:
+                x_column = dataset.columns[0]
+            series_columns = [item for item in dimension_columns if item != x_column]
+            series_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+            if series_columns:
+                for row in dataset.rows:
+                    series = " · ".join(str(row.get(item, "Unknown")) for item in series_columns)
+                    series_groups[series].append(row)
+            else:
+                series_groups[intent.metric] = dataset.rows
+            traces: list[dict[str, Any]] = []
+            for name, rows in sorted(series_groups.items()):
+                ordered = sorted(rows, key=lambda row: str(row.get(x_column, "")))
+                trace: dict[str, Any] = {
+                    "type": trace_type,
+                    "x": [row.get(x_column) for row in ordered],
+                    "y": [row.get(y_column) for row in ordered],
+                    "name": name,
+                }
+                if chart_type == ChartKind.LINE:
+                    trace["mode"] = "lines+markers"
+                traces.append(trace)
+            layout = self._layout(intent)
+            if chart_type == ChartKind.BAR and series_columns:
+                layout["barmode"] = "group"
+            if {"visitors", "conversions", "value"}.issubset(dataset.columns):
+                layout["yaxis"] = {"tickformat": ".1%"}
+            return {"data": traces, "layout": layout}
         if chart_type in {ChartKind.STACKED_BAR, ChartKind.STACKED_BAR_100}:
             grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
             for row in dataset.rows:
@@ -204,7 +246,10 @@ class ChartBuilder:
                 "data": [
                     {
                         "type": "waterfall",
-                        "x": [str(row.get("segment", row.get("period", index))) for index, row in enumerate(dataset.rows)],
+                        "x": [
+                            str(row.get("segment", row.get("period", index)))
+                            for index, row in enumerate(dataset.rows)
+                        ],
                         "y": values,
                         "measure": ["relative"] * len(values),
                     }
@@ -216,7 +261,9 @@ class ChartBuilder:
                 "data": [
                     {
                         "type": "funnel",
-                        "y": [str(row.get("stage", index)) for index, row in enumerate(dataset.rows)],
+                        "y": [
+                            str(row.get("stage", index)) for index, row in enumerate(dataset.rows)
+                        ],
                         "x": [row.get("visitors", row.get("value", 0)) for row in dataset.rows],
                     }
                 ],

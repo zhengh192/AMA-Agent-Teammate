@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -97,6 +98,32 @@ def select_relevant_skills(
             ranked.append((score, name, skill))
     ranked.sort(key=lambda item: (-item[0], item[1]))
     return [item[2] for item in ranked[:limit]]
+
+
+def select_relevant_memories(
+    query: str, memories: Sequence[dict[str, Any]], *, limit: int = 6
+) -> list[dict[str, Any]]:
+    """Select approved memories by relevance; use a small fallback for conversational continuity."""
+    query_tokens = _tokens(query)
+    normalized_query = _normalize(query)
+    ranked: list[tuple[int, str, dict[str, Any]]] = []
+    for memory in memories:
+        key = str(memory.get("key", ""))
+        scope = str(memory.get("scope", ""))
+        value = json.dumps(memory.get("value", {}), ensure_ascii=False, sort_keys=True)
+        score = 4 * len(query_tokens & _tokens(key.replace("_", " ")))
+        score += 2 * len(query_tokens & _tokens(value))
+        normalized_key = _normalize(key.replace("_", " "))
+        if normalized_key and normalized_key in normalized_query:
+            score += 8
+        if scope == "session":
+            score += 2
+        if score > 0:
+            ranked.append((score, key, memory))
+    ranked.sort(key=lambda item: (-item[0], item[1]))
+    if ranked:
+        return [item[2] for item in ranked[:limit]]
+    return list(memories[: min(2, limit)])
 
 
 def _tokens(value: str) -> set[str]:

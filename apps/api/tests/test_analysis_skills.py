@@ -54,10 +54,10 @@ def _parse_sse(lines: Iterator[str]) -> list[tuple[str, dict[str, Any]]]:
     return events
 
 
-def test_foundation_registry_validates_nine_active_skills_and_strict_schema() -> None:
+def test_foundation_registry_validates_active_skills_and_strict_schema() -> None:
     registry, issues = AnalysisSkillRegistry.load(ROOT / "skills")
     assert issues == []
-    assert len(registry.list_packages(SkillStatus.ACTIVE)) == 9
+    assert len(registry.list_packages(SkillStatus.ACTIVE)) == 10
     raw = yaml.safe_load((ROOT / "skills/metric_query/metadata.yaml").read_text(encoding="utf-8"))
     raw["unexpected"] = True
     with pytest.raises(ValidationError):
@@ -68,13 +68,16 @@ def test_invalid_prerequisite_is_rejected(tmp_path: Path) -> None:
     source = ROOT / "skills/analysis_reporting"
     target = tmp_path / "analysis_reporting"
     target.mkdir()
-    (target / "SKILL.md").write_text((source / "SKILL.md").read_text(encoding="utf-8"), encoding="utf-8")
+    (target / "SKILL.md").write_text(
+        (source / "SKILL.md").read_text(encoding="utf-8"), encoding="utf-8"
+    )
     metadata = yaml.safe_load((source / "metadata.yaml").read_text(encoding="utf-8"))
     metadata["prerequisite_skills"] = ["missing_skill"]
-    (target / "metadata.yaml").write_text(yaml.safe_dump(metadata, sort_keys=False), encoding="utf-8")
+    (target / "metadata.yaml").write_text(
+        yaml.safe_dump(metadata, sort_keys=False), encoding="utf-8"
+    )
     _, issues = AnalysisSkillRegistry.load(tmp_path)
     assert any(issue.code == "invalid_prerequisite" and issue.active for issue in issues)
-
 
 
 def _invalid_active_skill(root: Path) -> None:
@@ -122,11 +125,10 @@ def test_production_rejects_invalid_skill_and_emits_audit(
         assert event_type == ("analysis_skill.definition.rejected",)
 
 
-
 def test_skill_api_lists_retrieves_and_searches(client: TestClient) -> None:
     listed = client.get("/api/analysis-skills", params={"status": "active"})
     assert listed.status_code == 200
-    assert len(listed.json()) == 9
+    assert len(listed.json()) == 10
     retrieved = client.get("/api/analysis-skills/mix_rate_decomposition")
     assert retrieved.status_code == 200
     assert retrieved.json()["version"] == "1.0.0"
@@ -178,9 +180,19 @@ def test_analysis_plan_retrieves_metadata_then_skills_before_sql(
         assert response.status_code == 200
         sse = _parse_sse(response.iter_lines())
     approval = next(data for name, data in sse if name == "approval.required")
-    assert events.index("metadata") < events.index("intent") < events.index("skills") < events.index("sql")
+    assert (
+        events.index("metadata")
+        < events.index("intent")
+        < events.index("skills")
+        < events.index("sql")
+    )
     skill_ids = [step["skill"]["id"] for step in approval["plan"]["skill_execution_plan"]]
-    assert skill_ids == ["metric_query", "data_quality_check", "trend_anomaly_analysis", "analysis_reporting"]
+    assert skill_ids == [
+        "metric_query",
+        "data_quality_check",
+        "trend_anomaly_analysis",
+        "analysis_reporting",
+    ]
     with client.stream(
         "POST",
         f"/api/runs/{approval['run_id']}/approval/stream",
@@ -196,13 +208,14 @@ def test_analysis_plan_retrieves_metadata_then_skills_before_sql(
     assert [item["id"] for item in result["skill_references"]] == skill_ids
     assert all(item["version"] == "1.0.0" for item in result["skill_references"])
     trace = client.get(f"/api/runs/{approval['run_id']}/trace").json()
-    resolved = next(
-        item
-        for item in trace
-        if item["event_type"] == "semantic_metadata.resolved"
+    resolved = next(item for item in trace if item["event_type"] == "semantic_metadata.resolved")
+    assert [
+        item["skill"]["id"] for item in resolved["safe_details"]["skill_execution_plan"]
+    ] == skill_ids
+    assert all(
+        item["skill"]["version"] == "1.0.0"
+        for item in resolved["safe_details"]["skill_execution_plan"]
     )
-    assert [item["skill"]["id"] for item in resolved["safe_details"]["skill_execution_plan"]] == skill_ids
-    assert all(item["skill"]["version"] == "1.0.0" for item in resolved["safe_details"]["skill_execution_plan"])
 
 
 def test_deterministic_calculations_and_data_confidence() -> None:
@@ -232,6 +245,7 @@ def test_deterministic_calculations_and_data_confidence() -> None:
     }
     assert recommend_chart(AnalysisKind.TREND, 1) is None
     assert recommend_chart(AnalysisKind.MIX_RATE_DECOMPOSITION, 2) == ChartKind.WATERFALL
+
 
 def test_mix_rate_decomposition_reconciles() -> None:
     result = decompose_mix_rate(

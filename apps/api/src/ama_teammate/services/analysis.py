@@ -53,9 +53,7 @@ class AnalysisService:
         user_id = str(state["user_id"])
         question = str(state.get("analysis_question", state.get("input_text", "")))
         context = str(state.get("combined_input", ""))
-        plan = await self.planner.build(
-            run_id, question, context=context, owner_id=user_id
-        )
+        plan = await self.planner.build(run_id, question, context=context, owner_id=user_id)
         await self.repository.add_audit_event(
             actor_id=user_id,
             event_type="semantic_metadata.resolved",
@@ -68,6 +66,9 @@ class AnalysisService:
                 "metric_definition_version": plan.metric_definition.version,
                 "relationship_definitions": [
                     item.model_dump(mode="json") for item in plan.relationship_definitions
+                ],
+                "business_rule_definitions": [
+                    item.model_dump(mode="json") for item in plan.business_rule_definitions
                 ],
                 "skill_execution_plan": [
                     item.model_dump(mode="json") for item in plan.skill_execution_plan
@@ -93,6 +94,9 @@ class AnalysisService:
                 "metric_definition_version": plan.metric_definition.version,
                 "relationship_definitions": [
                     item.model_dump(mode="json") for item in plan.relationship_definitions
+                ],
+                "business_rule_definitions": [
+                    item.model_dump(mode="json") for item in plan.business_rule_definitions
                 ],
                 "skill_execution_plan": [
                     item.model_dump(mode="json") for item in plan.skill_execution_plan
@@ -128,6 +132,7 @@ class AnalysisService:
 
     async def list_learned_metrics(self, owner_id: str) -> list[LearnedMetricDefinition]:
         return await self.learned_metrics.list_active(owner_id)
+
     async def get_learned_metric(
         self, owner_id: str, definition_id: str
     ) -> LearnedMetricDefinition | None:
@@ -137,6 +142,7 @@ class AnalysisService:
         self, owner_id: str, query: str
     ) -> list[LearnedMetricDefinition]:
         return await self.learned_metrics.search(owner_id, query)
+
     async def approval_payload(self, state: dict[str, Any]) -> dict[str, Any]:
         plan = await self._require_plan(str(state["plan_ref"]))
         approval = await self.analysis_repository.get_approval(str(state["pending_approval_ref"]))
@@ -165,6 +171,12 @@ class AnalysisService:
             ApprovalStatus.CHANGES_REQUESTED,
         }:
             raise ValueError("Unsupported approval decision")
+        raw_comment = decision.get("comment")
+        comment = (
+            raw_comment.strip() if isinstance(raw_comment, str) and raw_comment.strip() else None
+        )
+        if status == ApprovalStatus.CHANGES_REQUESTED and comment is None:
+            raise ValueError("A change request must include a revision comment")
         approval_id = str(decision.get("approval_id", ""))
         payload_hash = str(decision.get("payload_hash", ""))
         if approval_id != str(state["pending_approval_ref"]):
@@ -174,7 +186,7 @@ class AnalysisService:
             payload_hash,
             str(state["user_id"]),
             status,
-            str(decision.get("comment")) if decision.get("comment") else None,
+            comment,
         )
         await self.repository.add_audit_event(
             actor_id=str(state["user_id"]),
@@ -183,7 +195,11 @@ class AnalysisService:
             session_id=str(state["session_id"]),
             run_id=str(state["run_id"]),
             graph_node="sql_approval",
-            safe_details={"approval_id": row.id, "payload_hash": row.payload_hash},
+            safe_details={
+                "approval_id": row.id,
+                "payload_hash": row.payload_hash,
+                "comment_hash": hash_text(comment) if comment else None,
+            },
         )
         return {
             "approval_status": row.status,
@@ -306,12 +322,34 @@ class AnalysisService:
             {limitation for item in computation.evidence for limitation in item.limitations}
         )
         confidence = final_dataset.quality.confidence
-        recommendations = (
-            ["Resolve data-quality limitations before relying on this analysis."]
-            if confidence.value in {"low", "unusable"}
-            else ["Use the linked evidence and approved definitions for follow-up decisions."]
+        question = str(state.get("input_text", ""))
+        chinese = any("\u4e00" <= character <= "\u9fff" for character in question)
+        if confidence.value in {"low", "unusable"}:
+            recommendations = [
+                "先处理结果中列出的数据质量问题，再使用这个数字。"
+                if chinese
+                else "Resolve the listed data-quality issues before using this result."
+            ]
+        elif plan.intent.dimensions:
+            recommendations = [
+                "如果你想继续，我可以基于这个分布再按时间或其他字段拆开看。"
+                if chinese
+                else "I can next break this distribution down by time or another field."
+            ]
+        else:
+            recommendations = [
+                "如果你想继续，我可以把这个结果按天或其他字段拆开看。"
+                if chinese
+                else "I can next break this result down by day or another field."
+            ]
+        executive_summary = (
+            f"我已经按“{plan.intent.metric}”完成了计算，结果和对应依据都在下面。"
+            if chinese
+            else (
+                f"I completed the {plan.intent.metric} calculation; the result and its evidence "
+                "are shown below."
+            )
         )
-        executive_summary = f"Completed {plan.intent.analysis_type.value} analysis with {confidence.value} data confidence."
 
         csv_id, csv_path, csv_hash = self.csv_writer.write(plan.run_id, final_dataset)
         await self.analysis_repository.add_artifact(
@@ -343,6 +381,7 @@ class AnalysisService:
             metric_references=[plan.metric_definition],
             data_source_references=sorted({query.source_id for query in plan.queries}),
             executed_query_references=[query.proposal_id for query in plan.queries],
+            business_rule_references=plan.business_rule_definitions,
             skill_references=[item.skill for item in plan.skill_execution_plan],
             data_confidence=confidence,
         )
@@ -435,6 +474,9 @@ class AnalysisService:
             "metric_definition": plan.metric_definition.model_dump(mode="json"),
             "relationship_definitions": [
                 item.model_dump(mode="json") for item in plan.relationship_definitions
+            ],
+            "business_rule_definitions": [
+                item.model_dump(mode="json") for item in plan.business_rule_definitions
             ],
             "skill_execution_plan": [
                 item.model_dump(mode="json") for item in plan.skill_execution_plan

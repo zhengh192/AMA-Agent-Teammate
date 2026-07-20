@@ -1,0 +1,77 @@
+id: case_journey_diagnostics
+name: Case Journey Diagnostics
+version: 1.0.0
+status: active
+description: Diagnose case-volume or case-rate incidents by comparing success and failed-session exit stages before reviewing bounded response themes.
+owner: Super Agent Data and Operations
+reviewer: Data Governance
+created_at: 2026-07-19T00:00:00Z
+updated_at: 2026-07-19T00:00:00Z
+effective_from: 2026-07-19
+effective_to: null
+aliases:
+  - case journey
+  - failure stage
+  - drop-off root cause
+  - "\u5efa\u5355\u8def\u5f84"
+  - "\u6d41\u5931\u9636\u6bb5"
+trigger_examples:
+  en:
+    - Why did case volume drop on July 5
+    - Find where failed hardware sessions left the journey
+    - Compare incident and baseline case-creation stages
+  zh:
+    - "\u5206\u67907\u67085\u65e5\u5efa\u5355\u91cf\u4e0b\u964d\u7684\u9636\u6bb5"
+    - "\u770b\u770b\u672a\u5efa\u5355\u7528\u6237\u79bb\u5f00\u5728\u54ea\u4e2aAgent\u9636\u6bb5"
+    - "\u6bd4\u8f83\u5f02\u5e38\u671f\u548c\u57fa\u7ebf\u671f\u7684\u5efa\u5355\u8def\u5f84"
+analysis_intents:
+  - journey_diagnostic
+required_metadata:
+  - dataset
+  - field
+  - relationship
+  - business_rule
+prerequisite_skills:
+  - funnel_analysis
+  - trend_anomaly_analysis
+inputs:
+  - name: incident_window
+    type: period
+    required: true
+    description: Calendar window in which the case metric changed.
+  - name: baseline_window
+    type: period
+    required: true
+    description: Comparable bounded window before the incident.
+  - name: session_outcomes
+    type: dataset
+    required: true
+    description: Session-grain case outcome and trigger fields.
+  - name: turn_journey
+    type: dataset
+    required: true
+    description: Ordered turn-grain intent and flow fields.
+outputs:
+  - name: stage_comparison
+    type: table
+    description: Baseline and incident counts by successful or failed exit stage.
+  - name: diagnostic_evidence
+    type: evidence
+    description: Success-rate movement and failed-stage share changes with limitations.
+  - name: next_layer_plan
+    type: analysis_result
+    description: Bounded response-theme follow-up for the abnormal stage when needed.
+required_tools:
+  - mysql_readonly_connector
+  - sql_safety_gateway
+  - controlled_analysis_library
+  - plotly_validator
+deterministic_operations:
+  - session_outcome_classification
+  - last_relevant_stage
+  - failure_share_shift
+  - small_sample_warning
+risk_level: medium
+approval:
+  required: false
+  reason: null

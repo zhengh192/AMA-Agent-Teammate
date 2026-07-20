@@ -461,30 +461,47 @@ class GovernanceService:
             )
             canonical = json.dumps(files, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
             payload_hash = hash_text(canonical)
-            row = SkillProposalRow(
-                id=new_id(),
-                name=name,
-                version=version,
-                owner_id=owner_id,
-                source_text_hash=hash_text(teaching),
-                diff_json=canonical,
-                payload_hash=payload_hash,
-                tool_allowlist_json=json.dumps(
-                    ["data_completeness", "segment_breakdown", "contribution"]
-                ),
-                status="pending_approval",
-                base_version=current.version if current else None,
-                created_at=utc_now(),
-                decided_at=None,
+            existing = await session.scalar(
+                select(SkillProposalRow)
+                .where(
+                    SkillProposalRow.owner_id == owner_id,
+                    SkillProposalRow.payload_hash == payload_hash,
+                )
+                .order_by(SkillProposalRow.created_at.desc())
             )
-            session.add(row)
-            await session.commit()
+            reused = existing is not None
+            if existing is not None:
+                row = existing
+            else:
+                row = SkillProposalRow(
+                    id=new_id(),
+                    name=name,
+                    version=version,
+                    owner_id=owner_id,
+                    source_text_hash=hash_text(teaching),
+                    diff_json=canonical,
+                    payload_hash=payload_hash,
+                    tool_allowlist_json=json.dumps(
+                        ["data_completeness", "segment_breakdown", "contribution"]
+                    ),
+                    status="pending_approval",
+                    base_version=current.version if current else None,
+                    created_at=utc_now(),
+                    decided_at=None,
+                )
+                session.add(row)
+                await session.commit()
         await self.repository.add_audit_event(
             actor_id=owner_id,
-            event_type="skill.proposed",
-            status="waiting",
+            event_type="skill.proposal.reused" if reused else "skill.proposed",
+            status="success" if reused else "waiting",
             input_text=teaching,
-            safe_details={"proposal_id": row.id, "name": name, "payload_hash": payload_hash},
+            safe_details={
+                "proposal_id": row.id,
+                "name": name,
+                "payload_hash": payload_hash,
+                "proposal_status": row.status,
+            },
         )
         return self._skill_proposal_view(row)
 
@@ -893,6 +910,9 @@ class GovernanceService:
             "status": row.status,
             "expires_at": row.expires_at,
             "created_at": row.created_at,
+            "approved_by": row.approved_by,
+            "proposal_id": row.proposal_id,
+            "deleted_at": row.deleted_at,
         }
 
 

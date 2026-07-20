@@ -65,6 +65,7 @@ async def create_analysis_runtime(
             allowed_tables=settings.super_agent_uat_allowed_table_names(),
             ssl_ca_path=settings.ama_super_agent_uat_ssl_ca_path,
             allow_insecure_transport=settings.ama_super_agent_uat_allow_insecure_transport,
+            allow_detail_fields=settings.ama_super_agent_uat_allow_detail_fields,
             connect_timeout_seconds=settings.ama_super_agent_uat_connect_timeout_seconds,
             read_timeout_seconds=settings.ama_super_agent_uat_read_timeout_seconds,
             write_timeout_seconds=settings.ama_super_agent_uat_write_timeout_seconds,
@@ -77,7 +78,7 @@ async def create_analysis_runtime(
     gateway = SQLSafetyGateway()
     registry = ConnectorRegistry(connectors)
     analysis_repository = AnalysisRepository(database)
-    learned_metrics = LearnedMetricService(database, registry, repository)
+    learned_metrics = LearnedMetricService(database, registry, repository, semantic_registry)
     planner = AnalysisPlanner(
         providers,
         registry,

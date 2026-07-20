@@ -1,6 +1,7 @@
 import { type ChangeEvent, useEffect, useState } from "react";
 import {
   governanceApi,
+  type BusinessRuleView,
   type DocumentView,
   type KnowledgeAnswer,
   type LearnedMetricView,
@@ -20,20 +21,24 @@ export function KnowledgeAdminPage() {
   const [documents, setDocuments] = useState<DocumentView[]>([]);
   const [conflicts, setConflicts] = useState<Array<{ id: string; name: string; status: string }>>([]);
   const [learnedMetrics, setLearnedMetrics] = useState<LearnedMetricView[]>([]);
+  const [businessRules, setBusinessRules] = useState<BusinessRuleView[]>([]);
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState<KnowledgeAnswer | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function refresh() {
-    const [nextDocuments, nextConflicts, nextLearnedMetrics] = await Promise.all([
-      governanceApi.documents(),
-      governanceApi.conflicts(),
-      governanceApi.learnedMetrics(),
-    ]);
+    const [nextDocuments, nextConflicts, nextLearnedMetrics, nextBusinessRules] =
+      await Promise.all([
+        governanceApi.documents(),
+        governanceApi.conflicts(),
+        governanceApi.learnedMetrics(),
+        governanceApi.businessRules(),
+      ]);
     setDocuments(nextDocuments);
     setConflicts(nextConflicts);
     setLearnedMetrics(nextLearnedMetrics);
+    setBusinessRules(nextBusinessRules);
   }
 
   useEffect(() => { void refresh().catch(() => undefined); }, []);
@@ -103,6 +108,27 @@ export function KnowledgeAdminPage() {
             ))}
           </div>
         </article>
+        <article className="governance-panel governance-wide">
+          <div className="panel-heading">
+            <div>
+              <h3>Active business rules</h3>
+              <p>Versioned semantic boundaries applied by the analysis planner. Change meaning through a reviewed new version.</p>
+            </div>
+            <span className="format-chip">{businessRules.length} active</span>
+          </div>
+          <div className="document-list">
+            {businessRules.length === 0 ? <p>No active business rules.</p> : businessRules.map((rule) => (
+              <details className="document-row" key={rule.id} open={rule.id === "super_agent.valid_user_traffic_population"}>
+                <summary>{rule.name} | {rule.id}@{rule.version} | {rule.severity}</summary>
+                <p>{rule.statement}</p>
+                {rule.expression ? <pre>{rule.expression}</pre> : null}
+                <small>Applies to: {rule.applies_to.join(", ")} | Owner: {rule.owner} | Source: {rule.source}</small>
+                {rule.caveats.map((caveat) => <p key={caveat}><small>{caveat}</small></p>)}
+              </details>
+            ))}
+          </div>
+        </article>
+
         <article className="governance-panel">
           <h3>Retrieval check</h3>
           <p>Verify what the Agent can support from currently active Knowledge.</p>

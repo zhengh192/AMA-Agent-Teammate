@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import (
 
 from ama_teammate.storage import analysis_schema as _analysis_schema  # noqa: F401
 from ama_teammate.storage import governance_schema as _governance_schema  # noqa: F401
+from ama_teammate.storage import jira_schema as _jira_schema  # noqa: F401
 from ama_teammate.storage import learned_metric_schema as _learned_metric_schema  # noqa: F401
 from ama_teammate.storage.schema import Base
 

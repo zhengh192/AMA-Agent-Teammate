@@ -27,6 +27,15 @@ class ChatSessionRow(Base):
     updated_at: Mapped[datetime]
 
 
+class DeletedChatSessionRow(Base):
+    __tablename__ = "deleted_chat_sessions"
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("chat_sessions.id"), primary_key=True
+    )
+    deleted_by: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    deleted_at: Mapped[datetime]
+
+
 class MessageRow(Base):
     __tablename__ = "messages"
     id: Mapped[str] = mapped_column(String(64), primary_key=True)

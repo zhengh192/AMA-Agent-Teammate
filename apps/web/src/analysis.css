@@ -47,3 +47,39 @@ th { position: sticky; top: 0; background: #f2f5f7; color: #4c5e70; }
 }
 .assumption-panel p { margin: 6px 0; }
 .assumption-panel ul { margin: 6px 0 0; padding-left: 20px; }
+
+.conversation .analysis-results.timeline-result {
+  width: 100%;
+  margin: 0 0 28px;
+}
+.revision-panel {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 0.9rem;
+  padding: 1rem;
+  border: 1px solid #cbd8e6;
+  border-radius: 12px;
+  background: #f8fbff;
+}
+
+.revision-panel label {
+  font-weight: 700;
+  color: #243b53;
+}
+
+.revision-panel textarea {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid #aebfd0;
+  border-radius: 8px;
+  padding: 0.75rem;
+  font: inherit;
+  color: #17212b;
+  background: #fff;
+}
+
+.revision-actions {
+  display: flex;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}

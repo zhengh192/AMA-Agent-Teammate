@@ -78,6 +78,8 @@ The gateway performs, in order:
 
 String matching alone is never the safety control.
 
+For the local Super Agent UAT pilot only, `AMA_SUPER_AGENT_UAT_ALLOW_DETAIL_FIELDS=true` records the owner-approved assertion that stored PII fields are encrypted or tokenized. In development this clears field-level deny and aggregate-only sets for the three configured UAT tables. It does not allow wildcard SQL, decryption, writes, non-allowlisted tables, approval bypass, or results beyond the configured row, byte, and timeout caps; production startup rejects this switch.
+
 ## Python analysis boundary
 
 Phase 2 starts with an allowlisted library of controlled operations. Arbitrary generated code remains disabled until a sandbox demonstrates:
@@ -114,3 +116,15 @@ Approval is explicit and scoped to an immutable action description. The record i
 ## Security verification gates
 
 Each phase adds abuse tests for authorization bypass, prompt injection, SQL bypass, approval replay, data exfiltration, oversized input, sensitive logging, cancellation, and dependency vulnerabilities. A threat-model review is required before real data, real document upload, arbitrary analysis code, background jobs, or external notifications are enabled.
+
+## Bounded Jira pilot boundary
+
+- Jira access is disabled by default and requires an HTTPS base URL plus a non-empty project allowlist. Jira writes additionally require `AMA_JIRA_WRITE_ENABLED=true`, which is accepted only in development.
+- The local pilot token is stored outside the repository as a Windows current-user DPAPI blob. Plaintext Jira tokens are not accepted through application settings.
+- The connector exposes narrow read/search/create/transition methods rather than a generic request tool. Project allowlist validation occurs before transport execution.
+- JQL search is read-only, capped at 50 results, and server-side wrapped in the configured project allowlist. The client selects a bounded field set and does not expose arbitrary REST endpoints.
+- Issue creation and status transition always use an authoritative persisted action plus approval bound to its canonical payload hash and policy version. Execution re-fetches the action and approval, rejects mismatch/replay, and never treats chat text or LangGraph checkpoint values as authority.
+- Environment proxies are disabled for the internal Jira transport; TLS certificate validation, timeouts, response-byte caps, core-field selection, and comment limits remain enforced.
+- Jira issue text, comments, and search results are untrusted source data. They cannot alter system instructions, approvals, Knowledge, Skill, or Memory.
+- Audit records contain action IDs, issue keys, payload/query hashes, policy versions, decisions, and sanitized result codes. Authorization headers, tokens, raw response bodies, raw descriptions, and raw error bodies are excluded.
+- Comments, attachments, deletion, arbitrary field editing, unrestricted cross-project JQL, background jobs, and notifications remain unimplemented.

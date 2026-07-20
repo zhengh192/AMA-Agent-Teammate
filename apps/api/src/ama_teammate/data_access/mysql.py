@@ -25,6 +25,7 @@ from ama_teammate.data_access.models import (
     QueryExecutionResult,
     TableCatalog,
 )
+from ama_teammate.sql_policy.aggregate_only import aggregate_only_violations
 
 _READ_ONLY_PRIVILEGES = frozenset({"SELECT", "SHOW VIEW", "USAGE"})
 _SENSITIVE_EXACT_NAMES = frozenset(
@@ -74,6 +75,7 @@ _SENSITIVE_NAME_PARTS = frozenset(
         "transcript",
     }
 )
+_AGGREGATE_ONLY_EXACT_NAMES = frozenset({"eticket_case_number", "serial_number"})
 _GRANT_PATTERN = re.compile(r"^GRANT\s+(?P<privileges>.+?)\s+ON\s+(?P<scope>.+?)\s+TO\s+", re.I)
 
 
@@ -90,6 +92,7 @@ class MySQLConnectionOptions(BaseModel):
     allowed_tables: frozenset[str] = Field(min_length=1)
     ssl_ca_path: Path | None = None
     allow_insecure_transport: bool = False
+    allow_detail_fields: bool = False
     connect_timeout_seconds: int = Field(default=10, ge=1, le=60)
     read_timeout_seconds: int = Field(default=15, ge=1, le=120)
     write_timeout_seconds: int = Field(default=10, ge=1, le=60)
@@ -163,16 +166,32 @@ class MySQLCatalogSnapshot(BaseModel):
         timeout_seconds: float,
         max_rows: int,
         max_result_bytes: int,
+        allow_detail_fields: bool = False,
     ) -> DataSourceConfig:
-        denied_columns = {
-            column.name
-            for table in self.tables
-            for column in table.columns
-            if column.name.lower() in _SENSITIVE_EXACT_NAMES
-            or any(
-                part in column.name.lower() for part in _SENSITIVE_NAME_PARTS
-            )
-        }
+        aggregate_only_columns = (
+            set()
+            if allow_detail_fields
+            else {
+                column.name
+                for table in self.tables
+                for column in table.columns
+                if column.name.lower() in _AGGREGATE_ONLY_EXACT_NAMES
+            }
+        )
+        denied_columns = (
+            set()
+            if allow_detail_fields
+            else {
+                column.name
+                for table in self.tables
+                for column in table.columns
+                if column.name not in aggregate_only_columns
+                and (
+                    column.name.lower() in _SENSITIVE_EXACT_NAMES
+                    or any(part in column.name.lower() for part in _SENSITIVE_NAME_PARTS)
+                )
+            }
+        )
         return DataSourceConfig(
             id=self.source_id,
             display_name="Super Agent UAT",
@@ -198,6 +217,7 @@ class MySQLCatalogSnapshot(BaseModel):
                 for table in self.tables
             },
             denied_columns=denied_columns,
+            aggregate_only_columns=aggregate_only_columns,
             timeout_seconds=timeout_seconds,
             max_rows=max_rows,
             max_result_bytes=max_result_bytes,
@@ -256,6 +276,7 @@ class MySQLReadOnlyConnector:
             timeout_seconds=float(options.read_timeout_seconds),
             max_rows=options.max_rows,
             max_result_bytes=options.max_result_bytes,
+            allow_detail_fields=options.allow_detail_fields,
         )
         return cls(options, config), snapshot
 
@@ -297,6 +318,7 @@ class MySQLReadOnlyConnector:
             database=self.options.database,
             allowed_tables=self.options.allowed_tables,
             denied_columns=frozenset(self.config.denied_columns),
+            aggregate_only_columns=frozenset(self.config.aggregate_only_columns),
         )
         started = time.perf_counter()
         try:
@@ -382,6 +404,7 @@ def validate_mysql_select(
     database: str,
     allowed_tables: frozenset[str],
     denied_columns: frozenset[str] = frozenset(),
+    aggregate_only_columns: frozenset[str] = frozenset(),
 ) -> None:
     try:
         statements = parse(sql, read="mysql")
@@ -420,6 +443,11 @@ def validate_mysql_select(
     referenced_columns = {column.name.lower() for column in statement.find_all(exp.Column)}
     if referenced_columns & {column.lower() for column in denied_columns}:
         raise QueryExecutionFailure("policy", "The query references a denied column.")
+    if aggregate_only_violations(statement, aggregate_only_columns):
+        raise QueryExecutionFailure(
+            "policy",
+            "The query references a protected column outside an aggregate expression.",
+        )
 
 
 def _pymysql_parameter_sql(sql: str, parameters: Mapping[str, object]) -> str:

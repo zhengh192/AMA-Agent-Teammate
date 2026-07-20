@@ -104,14 +104,15 @@ def goal_assessment_fixture(text: str) -> dict[str, Any]:
         "\u603b\u6570",
         "\u603b\u5171",
     )
-    if any(marker in lower for marker in knowledge_markers):
+    if re.search(r"(?<![a-z0-9])[a-z][a-z0-9]+-\d+(?![a-z0-9])", lower) or "jira" in lower:
+        route = "jira"
+        missing = [] if re.search(r"\d+", lower) else ["Jira issue key"]
+    elif any(marker in lower for marker in knowledge_markers):
         route = "knowledge"
         missing = (
             ["document"]
             if any(marker in lower for marker in ("upload", "ingest", "\u4e0a\u4f20"))
-            and not any(
-                ext in lower for ext in (".pdf", ".docx", ".xlsx", ".csv", ".txt", ".md")
-            )
+            and not any(ext in lower for ext in (".pdf", ".docx", ".xlsx", ".csv", ".txt", ".md"))
             else []
         )
     elif any(marker in lower for marker in analysis_markers):
@@ -169,25 +170,17 @@ def analysis_intent_fixture(text: str) -> dict[str, Any]:
         .split("Approved semantic context:", 1)[0]
         .split("Approved catalog:", 1)[0]
     )
-    lower = (
-        question.removeprefix("Current question:")
-        .removeprefix("Question:")
-        .strip()
-        .lower()
-    )
+    lower = question.removeprefix("Current question:").removeprefix("Question:").strip().lower()
     if any(
         marker in lower
         for marker in ("super agent", "uat", "visit_log", "turn_log", "telemetry_log")
     ):
         if any(
-            marker in lower
-            for marker in ("telemetry", "event", "\u57cb\u70b9", "\u4e8b\u4ef6")
+            marker in lower for marker in ("telemetry", "event", "\u57cb\u70b9", "\u4e8b\u4ef6")
         ):
             metric = "Super Agent UAT Telemetry Event Count"
             default_dimension = "event_name"
-        elif any(
-            marker in lower for marker in ("turn", "\u8f6e\u6b21", "\u5bf9\u8bdd\u8f6e")
-        ):
+        elif any(marker in lower for marker in ("turn", "\u8f6e\u6b21", "\u5bf9\u8bdd\u8f6e")):
             metric = "Super Agent UAT Turn Count"
             default_dimension = ""
         else:
@@ -210,8 +203,7 @@ def analysis_intent_fixture(text: str) -> dict[str, Any]:
                 "bar",
             )
         elif any(
-            marker in lower
-            for marker in ("trend", "\u8d8b\u52bf", "\u6bcf\u5929", "\u6bcf\u65e5")
+            marker in lower for marker in ("trend", "\u8d8b\u52bf", "\u6bcf\u5929", "\u6bcf\u65e5")
         ):
             analysis_type, dimensions, chart_type = "trend", ["period"], "line"
         else:
@@ -267,7 +259,13 @@ def analysis_intent_fixture(text: str) -> dict[str, Any]:
         )
     if any(
         marker in lower
-        for marker in ("funnel", "conversion rate", "rate calculation", "\u6f0f\u6597", "\u8f6c\u5316\u7387")
+        for marker in (
+            "funnel",
+            "conversion rate",
+            "rate calculation",
+            "\u6f0f\u6597",
+            "\u8f6c\u5316\u7387",
+        )
     ):
         return _intent(
             "funnel_rate",
@@ -279,7 +277,15 @@ def analysis_intent_fixture(text: str) -> dict[str, Any]:
         )
     if any(
         marker in lower
-        for marker in ("correlation", "causal", "cause", "why", "\u76f8\u5173", "\u56e0\u679c", "\u4e3a\u4ec0\u4e48")
+        for marker in (
+            "correlation",
+            "causal",
+            "cause",
+            "why",
+            "\u76f8\u5173",
+            "\u56e0\u679c",
+            "\u4e3a\u4ec0\u4e48",
+        )
     ):
         return _intent(
             "correlation",
@@ -289,7 +295,10 @@ def analysis_intent_fixture(text: str) -> dict[str, Any]:
             "scatter",
             "Measure association and explicitly avoid causal interpretation.",
         )
-    if any(marker in lower for marker in ("cross", "channel", "campaign", "\u8de8\u5e93", "\u6e20\u9053")):
+    if any(
+        marker in lower
+        for marker in ("cross", "channel", "campaign", "\u8de8\u5e93", "\u6e20\u9053")
+    ):
         return _intent(
             "segment_breakdown",
             "revenue by channel",
@@ -298,7 +307,10 @@ def analysis_intent_fixture(text: str) -> dict[str, Any]:
             "bar",
             "Join bounded campaign results and compare channels.",
         )
-    if any(marker in lower for marker in ("anomaly", "change detection", "\u5f02\u5e38", "\u7a81\u53d8")):
+    if any(
+        marker in lower
+        for marker in ("anomaly", "change detection", "\u5f02\u5e38", "\u7a81\u53d8")
+    ):
         return _intent(
             "anomaly",
             "revenue",
@@ -307,7 +319,9 @@ def analysis_intent_fixture(text: str) -> dict[str, Any]:
             "line",
             "Flag basic bounded z-score candidates.",
         )
-    if any(marker in lower for marker in ("seasonality", "calendar", "\u5b63\u8282", "\u65e5\u5386")):
+    if any(
+        marker in lower for marker in ("seasonality", "calendar", "\u5b63\u8282", "\u65e5\u5386")
+    ):
         return _intent(
             "seasonality",
             "revenue",
@@ -316,7 +330,10 @@ def analysis_intent_fixture(text: str) -> dict[str, Any]:
             "line",
             "Form a calendar hypothesis with limitations.",
         )
-    if any(marker in lower for marker in ("compare", "period comparison", "\u73af\u6bd4", "\u540c\u6bd4")):
+    if any(
+        marker in lower
+        for marker in ("compare", "period comparison", "\u73af\u6bd4", "\u540c\u6bd4")
+    ):
         return _intent(
             "period_comparison",
             "revenue",
@@ -354,3 +371,56 @@ def _intent(
         "success_criteria": success_criteria,
         "causal_design": False,
     }
+
+
+def jira_action_plan_fixture(text: str) -> dict[str, Any]:
+    payload = json.loads(text)
+    current = str(payload.get("current_request") or "")
+    context = str(payload.get("conversation_context") or "")
+    projects = [str(item).upper() for item in payload.get("allowed_projects", [])]
+    project = projects[0] if len(projects) == 1 else None
+    lowered = current.lower()
+    keys = re.findall(r"(?<![A-Z0-9])([A-Z][A-Z0-9]+-\d+)(?![A-Z0-9])", current, re.I)
+    fenced = re.findall(r"```jql\s*(.*?)```", current + "\n" + context, re.I | re.S)
+    if fenced and any(
+        marker in lowered for marker in ("执行", "go ahead", "run it", "do it", "jql")
+    ):
+        return {"action": "search", "jql": fenced[-1].strip(), "max_results": 25}
+    if keys and any(marker in lowered for marker in ("改状态", "状态改", "transition")):
+        target = re.search(
+            r"(?:状态\s*(?:改成|改为|到)|transition(?: status)? to)\s*[\"']?([^，。,.\n\"']+)",
+            current,
+            re.I,
+        )
+        if target:
+            return {
+                "action": "transition",
+                "issue_key": keys[0].upper(),
+                "target_status": target.group(1).strip(),
+            }
+    if any(
+        marker in lowered
+        for marker in (
+            "提jira",
+            "提 jira",
+            "创建jira",
+            "创建 jira",
+            "新建jira",
+            "create jira",
+            "raise jira",
+        )
+    ):
+        summary = re.search(r"(?:标题|summary)\s*[:：=]\s*([^\n]+)", current, re.I)
+        description = re.search(r"(?:描述|description)\s*[:：=]\s*([\s\S]+)", current, re.I)
+        if summary and project:
+            return {
+                "action": "create",
+                "project_key": project,
+                "summary": summary.group(1).strip(),
+                "description": description.group(1).strip() if description else "",
+                "issue_type": "Task",
+            }
+        return {"action": "clarify", "clarification_question": "请告诉我新 Jira 的标题和描述。"}
+    if keys:
+        return {"action": "read", "issue_key": keys[0].upper()}
+    return {"action": "clarify", "clarification_question": "请告诉我 Jira 工单编号或具体查询条件。"}

@@ -6,12 +6,17 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from ama_teammate.analysis_skills.models import SkillExecutionStep, SkillReference
-from ama_teammate.learned_metrics.models import ControlledMetricSpec
+from ama_teammate.learned_metrics.models import (
+    ControlledMetricSpec,
+    MetricFilter,
+    MetricFilterGroup,
+)
 from ama_teammate.semantic_metadata.models import DefinitionReference
 from ama_teammate.sql_policy.models import ValidatedQuery
 
 
 class AnalysisKind(StrEnum):
+    DETAIL = "detail"
     TREND = "trend"
     PERIOD_COMPARISON = "period_comparison"
     SEGMENT_BREAKDOWN = "segment_breakdown"
@@ -23,6 +28,7 @@ class AnalysisKind(StrEnum):
     CORRELATION = "correlation"
     MIX_RATE_DECOMPOSITION = "mix_rate_decomposition"
     CROSS_SOURCE_RECONCILIATION = "cross_source_reconciliation"
+    JOURNEY_DIAGNOSTIC = "journey_diagnostic"
 
 
 class ChartKind(StrEnum):
@@ -49,10 +55,17 @@ class AnalysisIntent(BaseModel):
     chart_type: ChartKind = ChartKind.TABLE
     success_criteria: str
     causal_design: bool = False
-    metadata_confidence: Literal["authoritative", "working_assumption", "learned_definition"] = "authoritative"
+    metadata_confidence: Literal["authoritative", "working_assumption", "learned_definition"] = (
+        "authoritative"
+    )
     assumptions: list[str] = Field(default_factory=list, max_length=12)
     calculation_spec: ControlledMetricSpec | None = None
     learned_metric_ref: str | None = None
+    detail_table: Literal["visit_log", "turn_log", "telemetry_log"] | None = None
+    detail_fields: list[str] = Field(default_factory=list, max_length=200)
+    detail_limit: int = Field(default=50, ge=1, le=200)
+    detail_filters: list[MetricFilter] = Field(default_factory=list, max_length=12)
+    detail_filter_groups: list[MetricFilterGroup] = Field(default_factory=list, max_length=8)
 
 
 class JoinPlan(BaseModel):
@@ -76,6 +89,7 @@ class AnalysisPlan(BaseModel):
     policy_version: str
     metric_definition: DefinitionReference
     relationship_definitions: list[DefinitionReference] = Field(default_factory=list)
+    business_rule_definitions: list[DefinitionReference] = Field(default_factory=list)
     skill_execution_plan: list[SkillExecutionStep] = Field(default_factory=list)
 
     def approval_payload(self) -> dict[str, Any]:
@@ -94,6 +108,9 @@ class AnalysisPlan(BaseModel):
             "metric_definition": self.metric_definition.model_dump(mode="json"),
             "relationship_definitions": [
                 item.model_dump(mode="json") for item in self.relationship_definitions
+            ],
+            "business_rule_definitions": [
+                item.model_dump(mode="json") for item in self.business_rule_definitions
             ],
             "skill_execution_plan": [
                 item.model_dump(mode="json") for item in self.skill_execution_plan
@@ -221,5 +238,6 @@ class AnalysisResult(BaseModel):
     metric_references: list[DefinitionReference] = Field(default_factory=list)
     data_source_references: list[str] = Field(default_factory=list)
     executed_query_references: list[str] = Field(default_factory=list)
+    business_rule_references: list[DefinitionReference] = Field(default_factory=list)
     skill_references: list[SkillReference] = Field(default_factory=list)
     data_confidence: DataConfidence = DataConfidence.HIGH

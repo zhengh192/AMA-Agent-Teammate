@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _default_jira_pat_path() -> Path:
+    local_app_data = os.getenv("LOCALAPPDATA")
+    if local_app_data:
+        return Path(local_app_data) / "AMA-Agent-Teammate" / "secrets" / "jira_pat.dpapi"
+    return Path.home() / ".ama-agent-teammate" / "secrets" / "jira_pat.dpapi"
 
 
 class Settings(BaseSettings):
@@ -35,8 +43,19 @@ class Settings(BaseSettings):
     ama_conversation_history_max_characters: int = Field(default=8_000, ge=0, le=30_000)
     ama_model_assisted_routing: bool = True
     ama_analysis_synthesis: bool = True
+    ama_knowledge_synthesis_timeout_seconds: float = Field(default=12.0, gt=0, le=60)
     ama_development_user_id: str = "local-dev-user"
     ama_development_user_name: str = "Local Developer"
+
+    ama_jira_enabled: bool = False
+    ama_jira_base_url: str = "https://jira.xpaas.lenovo.com"
+    ama_jira_allowed_projects: str = "LAIR"
+    ama_jira_pat_dpapi_path: Path = Field(default_factory=_default_jira_pat_path)
+    ama_jira_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
+    ama_jira_max_response_bytes: int = Field(default=1_048_576, ge=1_024, le=5_242_880)
+    ama_jira_comment_limit: int = Field(default=20, ge=0, le=100)
+    ama_jira_search_max_results: int = Field(default=50, ge=1, le=50)
+    ama_jira_write_enabled: bool = False
 
     ama_super_agent_uat_host: str | None = None
     ama_super_agent_uat_port: int = Field(default=3306, ge=1, le=65535)
@@ -51,6 +70,7 @@ class Settings(BaseSettings):
 
     ama_super_agent_uat_query_enabled: bool = False
     ama_super_agent_uat_allow_insecure_transport: bool = False
+    ama_super_agent_uat_allow_detail_fields: bool = False
     ama_super_agent_uat_max_rows: int = Field(default=500, ge=1, le=2_000)
     ama_super_agent_uat_max_result_bytes: int = Field(default=262_144, ge=1, le=1_048_576)
     azure_openai_endpoint: str | None = None
@@ -63,6 +83,8 @@ class Settings(BaseSettings):
     azure_openai_embedding_deployment: str | None = None
     azure_openai_timeout_seconds: float = Field(default=60.0, gt=0, le=300)
     azure_openai_max_retries: int = Field(default=2, ge=0, le=5)
+    azure_openai_reasoning_effort: Literal["low", "medium", "high", "xhigh"] = "medium"
+    azure_openai_max_output_tokens: int = Field(default=1_024, ge=128, le=16_384)
     azure_openai_token_scope: str = "https://cognitiveservices.azure.com/.default"
 
     @field_validator(
@@ -72,6 +94,7 @@ class Settings(BaseSettings):
         "ama_skill_registry_root",
         "ama_analysis_skill_root",
         "ama_semantic_metadata_root",
+        "ama_jira_pat_dpapi_path",
         mode="before",
     )
     @classmethod
@@ -106,6 +129,8 @@ class Settings(BaseSettings):
         errors = self.super_agent_uat_validation_errors()
         if self.ama_super_agent_uat_allow_insecure_transport and self.ama_env != "development":
             errors.append("AMA_SUPER_AGENT_UAT_ALLOW_INSECURE_TRANSPORT is development-only")
+        if self.ama_super_agent_uat_allow_detail_fields and self.ama_env != "development":
+            errors.append("AMA_SUPER_AGENT_UAT_ALLOW_DETAIL_FIELDS is development-only")
         return errors
 
     def super_agent_uat_allowed_table_names(self) -> frozenset[str]:
@@ -114,6 +139,25 @@ class Settings(BaseSettings):
             for item in self.ama_super_agent_uat_allowed_tables.split(",")
             if item.strip()
         )
+
+    def jira_allowed_project_keys(self) -> frozenset[str]:
+        return frozenset(
+            item.strip().upper()
+            for item in self.ama_jira_allowed_projects.split(",")
+            if item.strip()
+        )
+
+    def jira_runtime_validation_errors(self) -> list[str]:
+        if not self.ama_jira_enabled:
+            return []
+        errors: list[str] = []
+        if not self.ama_jira_base_url.lower().startswith("https://"):
+            errors.append("AMA_JIRA_BASE_URL must use HTTPS")
+        if not self.jira_allowed_project_keys():
+            errors.append("AMA_JIRA_ALLOWED_PROJECTS must not be empty")
+        if self.ama_jira_write_enabled and self.ama_env != "development":
+            errors.append("AMA_JIRA_WRITE_ENABLED is development-only in the current pilot")
+        return errors
 
     def azure_validation_errors(self) -> list[str]:
         errors: list[str] = []

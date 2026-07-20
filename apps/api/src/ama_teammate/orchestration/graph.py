@@ -11,6 +11,11 @@ from ama_teammate.orchestration.analysis_nodes import (
     route_after_approval,
     stop_analysis_node,
 )
+from ama_teammate.orchestration.jira_nodes import (
+    build_jira_node_functions,
+    route_after_jira_approval,
+    stop_jira_action,
+)
 from ama_teammate.orchestration.nodes import (
     assess_goal_node,
     build_assess_goal_node,
@@ -21,6 +26,7 @@ from ama_teammate.orchestration.nodes import (
 from ama_teammate.orchestration.state import AgentState
 
 if TYPE_CHECKING:
+    from ama_teammate.jira.service import JiraReadService
     from ama_teammate.providers.factory import ProviderBundle
     from ama_teammate.services.analysis import AnalysisService
 
@@ -29,6 +35,7 @@ def build_graph(
     checkpointer: Any,
     analysis_service: AnalysisService | None = None,
     providers: ProviderBundle | None = None,
+    jira_service: JiraReadService | None = None,
 ) -> Any:
     builder = StateGraph(AgentState)
     builder.add_node("intake", intake_node)
@@ -43,6 +50,8 @@ def build_graph(
             return "clarify"
         if state.get("route") == "analysis" and analysis_service is not None:
             return "analysis"
+        if state.get("route") == "jira" and jira_service is not None:
+            return "jira"
         return "prepare_response"
 
     routes: dict[Hashable, str] = {
@@ -68,6 +77,26 @@ def build_graph(
         builder.add_node("analysis", analysis_builder.compile())
         builder.add_edge("analysis", END)
         routes["analysis"] = "analysis"
+
+    if jira_service is not None:
+        plan_jira, approve_jira, execute_jira = build_jira_node_functions(jira_service)
+        jira_builder = StateGraph(AgentState)
+        jira_builder.add_node("plan_jira_action", plan_jira)
+        jira_builder.add_node("jira_action_approval", approve_jira)
+        jira_builder.add_node("execute_jira_action", execute_jira)
+        jira_builder.add_node("stop_jira_action", stop_jira_action)
+        jira_builder.add_edge(START, "plan_jira_action")
+        jira_builder.add_edge("plan_jira_action", "jira_action_approval")
+        jira_builder.add_conditional_edges(
+            "jira_action_approval",
+            route_after_jira_approval,
+            {"execute": "execute_jira_action", "stop": "stop_jira_action"},
+        )
+        jira_builder.add_edge("execute_jira_action", END)
+        jira_builder.add_edge("stop_jira_action", END)
+        builder.add_node("jira", jira_builder.compile())
+        builder.add_edge("jira", "prepare_response")
+        routes["jira"] = "jira"
 
     builder.add_edge(START, "intake")
     builder.add_edge("intake", "assess_goal")

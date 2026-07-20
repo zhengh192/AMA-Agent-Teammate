@@ -5,7 +5,7 @@ test("shows an optimistic user message and Thinking before the stream begins", a
   const responseGate = new Promise<void>((resolve) => { releaseResponse = resolve; });
 
   await page.goto("/");
-  await page.getByRole("button", { name: "+ New session" }).click();
+  await page.getByRole("button", { name: "+ 新对话" }).click();
   await page.route("**/api/sessions/*/messages/stream", async (route) => {
     await responseGate;
     await route.fulfill({
@@ -22,26 +22,26 @@ test("shows an optimistic user message and Thinking before the stream begins", a
   });
 
   await page.getByRole("textbox", { name: "Message" }).fill("Show my message now");
-  await page.getByRole("button", { name: "Send" }).click();
+  await page.getByRole("button", { name: "发送" }).click();
 
   await expect(page.getByText("Show my message now")).toBeVisible();
-  await expect(page.getByRole("status")).toContainText("Thinking");
+  await expect(page.getByRole("status")).toContainText("我先理解一下");
 
   releaseResponse();
-  await expect(page.locator(".status")).toHaveText("Completed");
+  await expect(page.locator(".status")).toHaveText("可以继续聊");
 });
 
 test("creates a session and streams a Mock Provider response", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Knowledge, Skill, and Memory" })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Open administration" })).toBeVisible();
-  await page.getByRole("button", { name: "+ New session" }).click();
-  await expect(page.getByRole("heading", { name: "Ask a data question" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "打开后台" })).toBeVisible();
+  await page.getByRole("button", { name: "+ 新对话" }).click();
+  await expect(page.getByRole("heading", { name: "想看什么，直接问我" })).toBeVisible();
   await page.getByRole("textbox", { name: "Message" }).fill("Hello from Playwright");
-  await page.getByRole("button", { name: "Send" }).click();
-  await expect(page.getByText(/Agent chat foundation is running with the Mock Provider/).first()).toBeVisible();
-  await expect(page.locator(".status")).toHaveText("Completed");
-  await page.getByText(/Trace \(/).click();
+  await page.getByRole("button", { name: "发送" }).click();
+  await expect(page.getByText(/我结合前面的对话/).first()).toBeVisible();
+  await expect(page.locator(".status")).toHaveText("可以继续聊");
+  await page.getByText(/查看审计记录（/).click();
   await expect(page.getByText("run.completed")).toBeVisible();
 });
 

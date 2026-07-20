@@ -18,12 +18,17 @@ from ama_teammate.api.routes_analysis_skills import router as analysis_skills_ro
 from ama_teammate.api.routes_chat import router as chat_router
 from ama_teammate.api.routes_governance import router as governance_router
 from ama_teammate.api.routes_health import router as health_router
+from ama_teammate.api.routes_jira import router as jira_router
 from ama_teammate.api.routes_learned_metrics import router as learned_metrics_router
 from ama_teammate.api.routes_semantic_metadata import router as semantic_metadata_router
 from ama_teammate.api.routes_sessions import router as sessions_router
 from ama_teammate.config import Settings, get_settings
 from ama_teammate.errors import AppError, app_error_handler, unhandled_error_handler
 from ama_teammate.governance.service import GovernanceService
+from ama_teammate.jira.client import JiraReadOnlyClient, UrllibJiraTransport
+from ama_teammate.jira.credentials import WindowsDpapiTokenProvider
+from ama_teammate.jira.repository import JiraActionRepository
+from ama_teammate.jira.service import JiraReadService
 from ama_teammate.logging import configure_logging
 from ama_teammate.orchestration.graph import GraphRuntime, build_graph
 from ama_teammate.providers.embeddings import create_embedding_provider
@@ -44,6 +49,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         configure_logging(resolved_settings.ama_log_level)
         resolved_settings.ensure_runtime_directories()
+        jira_config_errors = resolved_settings.jira_runtime_validation_errors()
+        if jira_config_errors:
+            raise RuntimeError("; ".join(jira_config_errors))
         database = Database(resolved_settings.ama_metadata_database_url)
         semantic_registry, metadata_issues = SemanticMetadataRegistry.load(
             resolved_settings.ama_semantic_metadata_root
@@ -90,11 +98,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         analysis_runtime = await create_analysis_runtime(
             resolved_settings, database, repository, providers, semantic_registry, skill_registry
         )
+
+        jira_client = JiraReadOnlyClient(
+            base_url=resolved_settings.ama_jira_base_url,
+            allowed_projects=resolved_settings.jira_allowed_project_keys(),
+            token_provider=WindowsDpapiTokenProvider(resolved_settings.ama_jira_pat_dpapi_path),
+            transport=UrllibJiraTransport(
+                resolved_settings.ama_jira_base_url,
+                resolved_settings.ama_jira_timeout_seconds,
+                resolved_settings.ama_jira_max_response_bytes,
+            ),
+            enabled=resolved_settings.ama_jira_enabled,
+            comment_limit=resolved_settings.ama_jira_comment_limit,
+            write_enabled=resolved_settings.ama_jira_write_enabled,
+            search_max_results=resolved_settings.ama_jira_search_max_results,
+        )
+        jira_action_repository = JiraActionRepository(database)
+        jira_service = JiraReadService(
+            jira_client,
+            action_repository=jira_action_repository,
+            repository=repository,
+            providers=providers,
+        )
         graph = GraphRuntime(
             build_graph(
                 checkpointer,
                 analysis_runtime.service,
                 providers if resolved_settings.ama_model_assisted_routing else None,
+                jira_service,
             )
         )
         app.state.settings = resolved_settings
@@ -108,6 +139,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         app.state.semantic_metadata_registry = semantic_registry
         app.state.governance_service = governance_service
+        app.state.jira_service = jira_service
         app.state.analysis_skill_registry = skill_registry
         app.state.connector_registry = analysis_runtime.registry
         app.state.chat_service = PhaseThreeChatService(
@@ -117,6 +149,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             providers=providers,
             analysis_service=analysis_runtime.service,
             governance_service=governance_service,
+            jira_service=jira_service,
         )
         try:
             yield
@@ -145,6 +178,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(learned_metrics_router, prefix="/api")
     app.include_router(analysis_router, prefix="/api")
     app.include_router(governance_router, prefix="/api")
+    app.include_router(jira_router, prefix="/api")
     app.include_router(analysis_skills_router, prefix="/api")
     app.include_router(sessions_router, prefix="/api")
     app.include_router(chat_router, prefix="/api")

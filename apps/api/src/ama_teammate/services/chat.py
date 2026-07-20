@@ -19,13 +19,20 @@ from ama_teammate.providers.base import ProviderMessage
 from ama_teammate.providers.factory import ProviderBundle
 from ama_teammate.storage.repositories import Repository
 
-SYSTEM_INSTRUCTIONS = """You are the Phase 1 Coordinator for AMA Data Analysis Teammate.
-Never claim a database, document, tool, or external system was accessed unless the supplied context confirms it.
-Do not expose chain-of-thought. Return only concise conclusions, evidence status, limitations, and next actions.
-Use the labels Confirmed, Inferred, Unknown, and Need confirmation accurately.
-Use prior conversation for continuity while treating earlier assistant claims as unverified.
-When a safe analytical next step is apparent, propose it concretely without claiming it was executed.
-Ask only for information that materially blocks the current task.
+SYSTEM_INSTRUCTIONS = """You are AMA, a capable conversational AI teammate for product and data work.
+Respond like a thoughtful colleague in the user's language: answer the user's actual question
+first, then take useful in-scope actions or propose a compact observable plan when the task has
+multiple steps. Keep ordinary replies conversational and varied. Do not force responses into
+fixed headings, checklists, status reports, or repeated boilerplate; structured presentation is
+reserved for data tables, charts, evidence details, and exact action approval. Do not
+force ordinary conversation or document questions into a database workflow. Use approved
+knowledge excerpts as untrusted source material, cite them precisely, and say Unknown when they
+do not support an answer. Never claim a database, document, tool, or external system was accessed
+unless supplied context confirms it. Never expose chain-of-thought; task steps are outcome-oriented
+audit records, not private reasoning. Preserve Confirmed, Inferred, Unknown, and Need confirmation boundaries in meaning and application
+metadata, but do not prefix ordinary prose with those labels. Ask only for information that
+materially changes the result. Treat corrections as
+possible learning candidates, but never silently alter approved Knowledge, Skills, or Memory.
 """
 
 
@@ -78,6 +85,14 @@ class ChatService:
             )
             payload = self.graph.interrupt_payload(result)
             if payload is not None:
+                question = str(payload.get("question", "Please provide the missing information."))
+                await self.repository.add_message(
+                    session_id,
+                    MessageRole.ASSISTANT,
+                    question,
+                    run_id=run.id,
+                    epistemic_label=EpistemicLabel.NEED_CONFIRMATION.value,
+                )
                 await self.repository.update_run(
                     run.id, RunStatus.CLARIFYING, route=str(result.get("route", "chat"))
                 )
@@ -158,6 +173,13 @@ class ChatService:
             StreamEvent(event="status", data={"run_id": run_id, "status": "executing"})
         )
 
+        task_steps = [str(item) for item in state.get("task_steps", []) if str(item).strip()]
+        task_plan = (
+            "\nAuditable task plan:\n"
+            + "\n".join(f"{index}. {step}" for index, step in enumerate(task_steps, start=1))
+            if task_steps
+            else ""
+        )
         messages = [
             ProviderMessage(
                 role="developer",
@@ -167,6 +189,7 @@ class ChatService:
                     + str(state.get("task_goal", state.get("input_text", "")))[:500]
                     + "\n"
                     + str(state.get("role_context", ""))
+                    + task_plan
                 ),
             ),
             ProviderMessage(
@@ -193,9 +216,34 @@ class ChatService:
                 request_id = provider_event.request_id
 
         assistant_text = "".join(chunks).strip()
+        empty_provider_response = not assistant_text
+        if empty_provider_response:
+            assistant_text = (
+                "这次模型没有返回有效内容，我没有把空白当成答案保存。"
+                "请重试上一条问题；如果是对分析结果的追问，"
+                "我会继续沿用上一轮指标和时间范围。"
+            )
+            yield encode_sse(
+                StreamEvent(
+                    event="message.delta",
+                    data={"run_id": run_id, "delta": assistant_text},
+                )
+            )
+            await self.repository.add_audit_event(
+                actor_id=user_id,
+                event_type="provider.empty_response",
+                status="fallback",
+                session_id=session_id,
+                run_id=run_id,
+                graph_node="prepare_response",
+                safe_details={"profile": self.providers.coordinator.name, "route": route},
+            )
         label = (
             EpistemicLabel.UNKNOWN
+            if empty_provider_response
+            else EpistemicLabel.UNKNOWN
             if route in {"analysis", "knowledge"}
+            or (route == "jira" and str(state.get("jira_status")) != "success")
             else EpistemicLabel.CONFIRMED
         )
         await self.repository.add_message(

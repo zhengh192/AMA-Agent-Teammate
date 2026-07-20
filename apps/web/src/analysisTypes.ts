@@ -27,7 +27,7 @@ export interface AnalysisPlanView {
   policy_version: string;
 }
 
-export interface ApprovalPayload {
+export interface SqlApprovalPayload {
   kind: "sql_approval";
   run_id: string;
   plan_id: string;
@@ -36,6 +36,30 @@ export interface ApprovalPayload {
   status: "waiting_approval";
   plan: AnalysisPlanView;
 }
+
+export interface JiraActionView {
+  action: "create" | "transition";
+  issue_key?: string | null;
+  project_key?: string | null;
+  summary?: string | null;
+  description?: string | null;
+  issue_type?: string | null;
+  priority?: string | null;
+  target_status?: string | null;
+}
+
+export interface JiraApprovalPayload {
+  kind: "jira_action_approval";
+  run_id: string;
+  action_id: string;
+  approval_id: string;
+  payload_hash: string;
+  status: "waiting_approval";
+  policy_version: string;
+  action: JiraActionView;
+}
+
+export type ApprovalPayload = SqlApprovalPayload | JiraApprovalPayload;
 
 export interface DatasetQuality {
   row_count: number;

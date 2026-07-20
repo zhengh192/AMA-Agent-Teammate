@@ -1,0 +1,20 @@
+positive:
+  - input: Case volume dropped on July 5; compare the prior three days and find the failed-session exit stage.
+    expect:
+      - incident_success_rate
+      - baseline_success_rate
+      - failed_stage_share_change
+      - root_cause_not_claimed
+  - input: Review why users left after the stage distribution shows a concentrated increase.
+    expect:
+      - bounded_last_responses
+      - untrusted_text
+      - theme_distribution
+negative:
+  - input: The last bot response proves PD was down.
+    expect:
+      - causal_claim_rejected
+      - system_evidence_requested
+  - input: A session has no turn or response evidence.
+    expect:
+      - unknown_stage_or_theme

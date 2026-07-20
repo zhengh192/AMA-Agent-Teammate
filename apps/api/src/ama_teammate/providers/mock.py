@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import AsyncIterator, Sequence
 
 from pydantic import BaseModel
@@ -16,6 +17,7 @@ from ama_teammate.providers.structured_mock import (
     analysis_intent_fixture,
     analysis_narrative_fixture,
     goal_assessment_fixture,
+    jira_action_plan_fixture,
 )
 
 
@@ -36,6 +38,7 @@ class MockLLMProvider:
             "analysis_intent": analysis_intent_fixture,
             "analysis_narrative": analysis_narrative_fixture,
             "goal_assessment": goal_assessment_fixture,
+            "jira_action_plan": jira_action_plan_fixture,
         }
         if request.name not in fixtures:
             raise ValueError(f"Unknown mock structured fixture: {request.name}")
@@ -57,22 +60,22 @@ class MockLLMProvider:
         knowledge_markers = ("document", "knowledge", "upload", "文档", "知识", "上传")
         analysis_markers += ("\u5206\u6790", "\u6570\u636e", "\u67e5\u8be2")
         knowledge_markers += ("\u6587\u6863", "\u77e5\u8bc6", "\u4e0a\u4f20")
-        if any(marker in lower for marker in analysis_markers):
+        if "<jira_issue_context" in user_text:
+            key_match = re.search(r'"key"\s*:\s*"([A-Z0-9-]+)"', user_text)
+            status_match = re.search(r'"status"\s*:\s*"([^"]+)"', user_text)
+            key = key_match.group(1) if key_match else "the requested issue"
+            status = status_match.group(1) if status_match else "Unknown"
+            text = f"{key} was retrieved from Jira. Its current status is {status}."
+        elif any(marker in lower for marker in analysis_markers):
             text = (
-                "Unknown: no approved analysis result was supplied to this response path. "
-                "Need confirmation: provide the material metric and time range if they are absent; "
-                "no database query is claimed here."
+                "我现在还没有拿到可以引用的分析结果。你告诉我想看的指标和时间范围，"
+                "我就可以继续整理查询；在真正执行前，我不会假装已经查过数据库。"
             )
         elif any(marker in lower for marker in knowledge_markers):
-            text = (
-                "Unknown: no approved cited knowledge excerpt was supplied to this response path. "
-                "No document content is claimed here."
-            )
+            text = "我目前没有找到能直接支持这个回答的文档内容，所以先不猜。"
         else:
-            text = (
-                "Confirmed: the Agent chat foundation is running with the Mock Provider. "
-                f"I received your message: {user_text.strip()}"
-            )
+            conversational_context = re.sub(r"</?[^>]+>", "", user_text).strip()
+            text = f"我结合前面的对话看到了这些信息：{conversational_context}"
 
         for index in range(0, len(text), 18):
             await asyncio.sleep(0)

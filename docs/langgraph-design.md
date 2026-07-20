@@ -110,9 +110,9 @@ Uploaded content never changes system instructions. Activation writes through an
 
 ## Reliability subgraph (Phase 4)
 
-`read_jira -> extract_recovery_context -> request_missing_criteria -> propose_quality_checks -> validate_sql -> approve_plan -> create_job -> monitor_bounded_job -> summarize_evidence`
+`plan_jira_action -> [read | bounded_search | interrupt_for_exact_write_approval] -> execute_jira_action -> audit_result`
 
-The Jira connector is read-only. Missing recovery criteria always returns to a human/owner.
+Jira reads and allowlist-bounded JQL searches execute directly. Issue creation and status transition require an authoritative exact-payload approval; missing action details or recovery criteria return to a human/owner.
 
 ## Conditional edges
 

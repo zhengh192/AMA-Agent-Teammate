@@ -43,11 +43,12 @@ export async function streamApproval(
   payloadHash: string,
   status: "approved" | "rejected" | "changes_requested",
   onEvent: AnalysisEventHandler,
+  comment?: string,
 ): Promise<void> {
   const response = await fetch(`/api/runs/${runId}/approval/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ approval_id: approvalId, payload_hash: payloadHash, status }),
+    body: JSON.stringify({ approval_id: approvalId, payload_hash: payloadHash, status, comment }),
   });
   await streamResponse(response, onEvent);
 }

@@ -11,6 +11,7 @@ from pydantic import BaseModel, ValidationError
 
 from ama_teammate.data_access.registry import ConnectorRegistry
 from ama_teammate.semantic_metadata.models import (
+    BusinessRuleDefinition,
     BusinessRuleFile,
     DatasetDefinition,
     DataSourceDefinition,
@@ -240,6 +241,36 @@ class SemanticMetadataRegistry:
                 results.append(item)
         return results
 
+    def active_business_rules_for_connectors(
+        self, connector_ids: list[str]
+    ) -> list[BusinessRuleDefinition]:
+        requested = set(connector_ids)
+        sources = cast(
+            list[DataSourceDefinition], self._by_type.get(DefinitionType.DATA_SOURCE, [])
+        )
+        source_ids = {
+            item.id
+            for item in sources
+            if self._effective(item) and item.connection_name in requested
+        }
+        datasets = cast(
+            list[DatasetDefinition], self._by_type.get(DefinitionType.DATASET, [])
+        )
+        rule_ids = {
+            rule_id
+            for dataset in datasets
+            if self._effective(dataset) and dataset.data_source_id in source_ids
+            for rule_id in dataset.business_rule_ids
+        }
+        rules = cast(
+            list[BusinessRuleDefinition],
+            self._by_type.get(DefinitionType.BUSINESS_RULE, []),
+        )
+        return sorted(
+            [item for item in rules if self._effective(item) and item.id in rule_ids],
+            key=lambda item: (item.id, item.version),
+        )
+
     def resolve_metric(
         self, term: str, *, context: str = "", allow_draft: bool = False
     ) -> MetricDefinition:
@@ -376,6 +407,7 @@ class SemanticMetadataRegistry:
             for item in cast(list[FieldDefinition], self._by_type[DefinitionType.FIELD])
             if self._effective(item)
         }
+        active_business_rules = active_ids.get(DefinitionType.BUSINESS_RULE, set())
 
         def issue(item: SemanticDefinition, code: str, message: str) -> None:
             issues.append(
@@ -390,10 +422,12 @@ class SemanticMetadataRegistry:
             )
 
         for dataset in cast(list[DatasetDefinition], self._by_type[DefinitionType.DATASET]):
-            if self._effective(dataset) and dataset.data_source_id not in active_ids.get(
-                DefinitionType.DATA_SOURCE, set()
-            ):
+            if not self._effective(dataset):
+                continue
+            if dataset.data_source_id not in active_ids.get(DefinitionType.DATA_SOURCE, set()):
                 issue(dataset, "data_source_reference_invalid", "Dataset references an inactive data source.")
+            elif any(item not in active_business_rules for item in dataset.business_rule_ids):
+                issue(dataset, "business_rule_reference_invalid", "Dataset references an inactive business rule.")
         for field in cast(list[FieldDefinition], self._by_type[DefinitionType.FIELD]):
             if self._effective(field) and field.dataset_id not in active_ids.get(
                 DefinitionType.DATASET, set()
@@ -413,6 +447,8 @@ class SemanticMetadataRegistry:
                 field_refs.extend(metric.denominator.field_references)
             if any(item not in field_dataset for item in field_refs):
                 issue(metric, "metric_field_reference_invalid", "Metric references an inactive field.")
+            elif any(item not in active_business_rules for item in metric.business_rule_ids):
+                issue(metric, "business_rule_reference_invalid", "Metric references an inactive business rule.")
         for relationship in cast(
             list[RelationshipDefinition], self._by_type[DefinitionType.RELATIONSHIP]
         ):
@@ -429,6 +465,8 @@ class SemanticMetadataRegistry:
                 ) != relationship.right_dataset_id:
                     issue(relationship, "relationship_key_reference_invalid", "Join key does not belong to the declared dataset.")
                     break
+            if any(item not in active_business_rules for item in relationship.business_rule_ids):
+                issue(relationship, "business_rule_reference_invalid", "Relationship references an inactive business rule.")
         return issues
 
     @staticmethod

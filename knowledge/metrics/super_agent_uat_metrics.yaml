@@ -3,26 +3,26 @@ kind: metric_file
 definitions:
   - kind: metric
     id: super_agent_uat.session_count
-    version: 1.0.0
+    version: 1.1.0
     status: active
     name: Super Agent UAT Session Count
-    description: Distinct physical session identifiers observed in the allowlisted UAT visit log.
+    description: Count of visit_log rows using the user-confirmed UAT total_sessions definition.
     owner: Super Agent Data and Operations
-    source: UAT physical catalog and bounded quality profile verified 2026-07-16
+    source: User-provided UAT SQL confirmed 2026-07-17
     effective_from: 2026-06-01
     effective_to: null
-    last_reviewed_at: 2026-07-16
+    last_reviewed_at: 2026-07-17
     aliases: [UAT session count, session count, visit count, Super Agent sessions, sessions]
-    numerator: {expression: COUNT(DISTINCT session_id), description: Distinct non-null physical session identifiers., aggregation: count_distinct, distinct_by: [super_agent_uat.visit_log.session_id], field_references: [super_agent_uat.visit_log.session_id]}
+    numerator: {expression: COUNT(1), description: All visit_log rows after the confirmed filters., aggregation: count, distinct_by: [], field_references: []}
     denominator: null
-    formula: COUNT(DISTINCT session_id)
-    distinct_logic: Count each non-null physical session ID once.
-    filters: [start_time is inside the approved half-open interval]
-    exclusions: [null session identifiers, denied sensitive columns]
+    formula: COUNT(1)
+    distinct_logic: No deduplication; count visit_log rows exactly as supplied.
+    filters: [start_time is inside the approved half-open interval, channel is not null]
+    exclusions: [rows with null channel, rows outside the requested time interval]
     time_logic: {event_time_field: super_agent_uat.visit_log.start_time, timezone: Unknown, window: "Half-open interval [start_date, end_date)", late_arrival_policy: Unknown}
     supported_dimensions: [super_agent_uat.visit_log.start_time, super_agent_uat.visit_log.channel, super_agent_uat.visit_log.intent_type]
     source_datasets: [super_agent_uat.visit_log]
-    interpretation_cautions: [This is a physical record count, not an approved eligible-session KPI., Channel and intent have material missingness., Timezone is unknown.]
+    interpretation_cautions: [The label session assumes visit_log remains one row per session., Timezone is unknown.]
     business_rule_ids: []
   - kind: metric
     id: super_agent_uat.turn_count
@@ -31,7 +31,7 @@ definitions:
     name: Super Agent UAT Turn Count
     description: Distinct physical turn identifiers observed in the allowlisted UAT turn log.
     owner: Super Agent Data and Operations
-    source: UAT physical catalog and bounded quality profile verified 2026-07-16
+    source: User-provided UAT SQL confirmed 2026-07-17
     effective_from: 2026-06-01
     effective_to: null
     last_reviewed_at: 2026-07-16
@@ -40,7 +40,7 @@ definitions:
     denominator: null
     formula: COUNT(DISTINCT turn_id)
     distinct_logic: Count each non-null physical turn ID once.
-    filters: [start_time is inside the approved half-open interval]
+    filters: [start_time is inside the approved half-open interval, channel is not null]
     exclusions: [null turn identifiers, transcript fields, response fields, denied sensitive columns]
     time_logic: {event_time_field: super_agent_uat.turn_log.start_time, timezone: Unknown, window: "Half-open interval [start_date, end_date)", late_arrival_policy: Unknown}
     supported_dimensions: [super_agent_uat.turn_log.start_time]
@@ -54,7 +54,7 @@ definitions:
     name: Super Agent UAT Telemetry Event Count
     description: Distinct physical event identifiers observed in the allowlisted UAT telemetry log.
     owner: Super Agent Product Analytics
-    source: UAT physical catalog and bounded quality profile verified 2026-07-16
+    source: User-provided UAT SQL confirmed 2026-07-17
     effective_from: 2026-06-01
     effective_to: null
     last_reviewed_at: 2026-07-16

@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from ama_teammate.analysis.charts import ChartBuilder, PlotlySpecValidator
+from ama_teammate.analysis.engine import ControlledAnalysisEngine
 from ama_teammate.analysis.models import (
     AnalysisComputation,
     AnalysisIntent,
@@ -151,6 +152,34 @@ def test_single_database_metric_approval_execution_chart_evidence_and_csv(
     assert download.status_code == 200
     assert download.headers["content-type"].startswith("text/csv")
     assert b"period,value,orders" in download.content
+
+
+def test_scalar_count_is_not_described_as_a_flat_trend() -> None:
+    intent = AnalysisIntent(
+        analysis_type=AnalysisKind.TREND,
+        metric="downgrade_depot=yes session count",
+        source_ids=["super_agent_uat"],
+        chart_type=ChartKind.KPI,
+        success_criteria="Return the bounded scalar count.",
+    )
+    dataset = Dataset(
+        id="dataset-scalar-count",
+        source_ids=["super_agent_uat"],
+        query_proposal_ids=["query-scalar-count"],
+        columns=["value"],
+        rows=[{"value": 167}],
+        row_count=1,
+        result_bytes=20,
+        quality=DatasetQuality(row_count=1, missing_by_column={"value": 0}, duplicate_rows=0),
+    )
+
+    computation = ControlledAnalysisEngine().analyze(intent, dataset, None)
+    chart = ChartBuilder(PlotlySpecValidator()).build(intent, dataset, computation)
+
+    assert computation.summary == {"value": 167.0}
+    assert "flat" not in computation.conclusions[0].text.casefold()
+    assert computation.conclusions[0].text.endswith("167.")
+    assert chart.figure["data"][0]["value"] == 167.0
 
 
 def test_cross_database_join_records_unmatched_quality(client: TestClient) -> None:
@@ -325,3 +354,108 @@ def test_all_plotly_chart_types_validate(chart_type: ChartKind) -> None:
     spec = ChartBuilder(PlotlySpecValidator()).build(intent, dataset, computation)
     assert spec.chart_type == chart_type
     PlotlySpecValidator().validate(spec.figure)
+
+
+def test_line_chart_splits_requested_category_series() -> None:
+    rows = [
+        {"period": "2026-07-15", "channel": "web", "value": 0.1, "visitors": 10, "conversions": 1},
+        {"period": "2026-07-16", "channel": "web", "value": 0.2, "visitors": 10, "conversions": 2},
+        {"period": "2026-07-15", "channel": "app", "value": 0.3, "visitors": 10, "conversions": 3},
+        {"period": "2026-07-16", "channel": "app", "value": 0.4, "visitors": 10, "conversions": 4},
+    ]
+    dataset = Dataset(
+        id="daily-rate",
+        source_ids=["super_agent_uat"],
+        query_proposal_ids=["query"],
+        columns=list(rows[0]),
+        rows=rows,
+        row_count=len(rows),
+        result_bytes=200,
+        quality=DatasetQuality(
+            row_count=len(rows),
+            missing_by_column={column: 0 for column in rows[0]},
+            duplicate_rows=0,
+        ),
+    )
+    intent = AnalysisIntent(
+        analysis_type=AnalysisKind.TREND,
+        metric="WHTR",
+        dimensions=["period", "channel"],
+        source_ids=["super_agent_uat"],
+        chart_type=ChartKind.LINE,
+        success_criteria="render daily series",
+    )
+    computation = AnalysisComputation(summary={}, conclusions=[], evidence=[])
+
+    spec = ChartBuilder(PlotlySpecValidator()).build(intent, dataset, computation)
+
+    assert [trace["name"] for trace in spec.figure["data"]] == ["app", "web"]
+    assert spec.figure["layout"]["yaxis"]["tickformat"] == ".1%"
+
+
+def test_gateway_allows_aggregate_only_column_without_raw_exposure() -> None:
+    base = demo_source_configs()[0]
+    source = base.model_copy(
+        update={"denied_columns": set(), "aggregate_only_columns": {"customer_email"}}
+    )
+    accepted = QueryProposal(
+        id="aggregate-only",
+        source_id=source.id,
+        sql=(
+            "SELECT SUM(CASE WHEN customer_email IS NOT NULL THEN 1 ELSE 0 END) AS value "
+            "FROM daily_sales"
+        ),
+        parameters={},
+        purpose="aggregate protected field",
+        max_rows=100,
+        max_result_bytes=10_000,
+        timeout_seconds=5,
+    )
+    SQLSafetyGateway().validate(accepted, source)
+    rejected = accepted.model_copy(
+        update={"id": "raw-protected", "sql": "SELECT customer_email FROM daily_sales"}
+    )
+    with pytest.raises(SQLPolicyViolation) as caught:
+        SQLSafetyGateway().validate(rejected, source)
+    assert caught.value.code == "column_aggregate_only"
+
+
+def test_request_changes_requires_comment_and_records_only_comment_hash(
+    client: TestClient,
+) -> None:
+    run_id, approval = request_plan(
+        client, "Query revenue trend for 2025 from the PostgreSQL sales data source."
+    )
+    with client.stream(
+        "POST",
+        f"/api/runs/{run_id}/approval/stream",
+        json={
+            "approval_id": approval["approval_id"],
+            "payload_hash": approval["payload_hash"],
+            "status": "changes_requested",
+        },
+    ) as response:
+        missing_events = parse_sse(response.iter_lines())
+    assert any(name == "error" for name, _ in missing_events)
+
+    run_id, approval = request_plan(
+        client, "Query revenue trend for 2025 from the PostgreSQL sales data source."
+    )
+    comment = "Group by month and use net revenue."
+    with client.stream(
+        "POST",
+        f"/api/runs/{run_id}/approval/stream",
+        json={
+            "approval_id": approval["approval_id"],
+            "payload_hash": approval["payload_hash"],
+            "status": "changes_requested",
+            "comment": comment,
+        },
+    ) as response:
+        events = parse_sse(response.iter_lines())
+    decision = next(data for name, data in events if name == "approval.decision")
+    assert decision["decision"] == "changes_requested"
+    trace = client.get(f"/api/runs/{run_id}/trace").json()
+    decided = next(item for item in trace if item["event_type"] == "analysis.approval.decided")
+    assert len(decided["safe_details"]["comment_hash"]) == 64
+    assert comment not in str(decided)

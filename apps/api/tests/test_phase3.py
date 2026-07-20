@@ -178,6 +178,11 @@ def test_skill_proposal_requires_exact_approval_and_is_audited(
     assert proposal["status"] == "pending_approval"
     assert not (settings.ama_skill_registry_root / proposal["name"]).exists()
 
+    repeated = client.post("/api/skills/proposals", json={"teaching": teaching})
+    assert repeated.status_code == 200
+    assert repeated.json()["id"] == proposal["id"]
+    assert len(client.get("/api/skills/proposals").json()) == 1
+
     wrong = client.post(
         f"/api/skills/proposals/{proposal['id']}/decision",
         json={"decision": "approved", "payload_hash": "0" * 64},
@@ -375,3 +380,59 @@ def test_agent_memory_proposal_is_inert_until_admin_approval(client: TestClient)
     assert run_match is not None
     trace = client.get(f"/api/runs/{run_match.group(1)}/trace").json()
     assert any(event["event_type"] == "memory.invoked" for event in trace)
+
+
+def test_product_question_uses_uploaded_knowledge_instead_of_sql(client: TestClient) -> None:
+    uploaded = client.post(
+        "/api/documents/upload",
+        files={
+            "file": (
+                "super-agent-launch-guide.md",
+                b"# Super Agent capabilities\n"
+                b"Super Agent provides conversational product guidance, source-backed knowledge "
+                b"answers, and governed data analysis with reviewable SQL and charts.\n",
+                "text/markdown",
+            )
+        },
+    )
+    assert uploaded.status_code == 200
+    session = client.post("/api/sessions", json={"title": "Product explanation"}).json()
+
+    stream = client.post(
+        f"/api/sessions/{session['id']}/messages/stream",
+        json={"content": "你先给我讲讲 Super Agent 有什么功能"},
+    )
+
+    assert stream.status_code == 200
+    assert "event: knowledge.answer" in stream.text
+    assert "event: task.plan" in stream.text
+    assert "event: approval.required" not in stream.text
+    assert "event: clarification.required" not in stream.text
+    assert "conversational product guidance" in stream.text
+    run_match = re.search(r'"run_id":"([^"]+)"', stream.text)
+    assert run_match is not None
+    trace = client.get(f"/api/runs/{run_match.group(1)}/trace").json()
+    assert any(event["event_type"] == "task.plan.created" for event in trace)
+    assert any(event["event_type"] == "knowledge.retrieved" for event in trace)
+
+
+def test_persistent_fact_correction_creates_memory_not_skill_proposal(
+    client: TestClient,
+) -> None:
+    session = client.post("/api/sessions", json={"title": "Correction learning"}).json()
+    content = (
+        "\u4ee5\u540e\u8bb0\u4f4f\uff0cSuper Agent \u662f\u9879\u76ee\u540d\u79f0\uff0c"
+        "\u4e0d\u662f\u4e00\u4e2a\u6307\u6807"
+    )
+
+    stream = client.post(
+        f"/api/sessions/{session['id']}/messages/stream", json={"content": content}
+    )
+
+    assert stream.status_code == 200
+    assert "event: memory.proposal" in stream.text
+    assert "event: skill.proposal" not in stream.text
+    assert client.get("/api/memories").json() == []
+    proposal = client.get("/api/memories/proposals").json()[0]
+    assert proposal["status"] == "pending_approval"
+    assert proposal["source"] == "agent_correction_candidate"

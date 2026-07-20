@@ -13,6 +13,7 @@ from ama_teammate.orchestration.state import AgentState
 from ama_teammate.providers.factory import create_provider_bundle
 from ama_teammate.services.context import (
     build_conversation_context,
+    select_relevant_memories,
     select_relevant_skills,
 )
 from ama_teammate.services.phase2_chat import PhaseTwoChatService
@@ -37,6 +38,33 @@ def test_multilingual_analysis_routing_does_not_require_source_name() -> None:
 
     assert result["route"] == "analysis"
     assert result["missing_fields"] == []
+
+
+def test_product_explanation_is_not_forced_into_sql() -> None:
+    result = assess_goal_node(_state("你先给我讲讲 Super Agent 有什么功能"))
+
+    assert result["route"] == "knowledge"
+    assert result["missing_fields"] == []
+    assert result["task_steps"] == [
+        "Retrieve relevant approved knowledge sources.",
+        "Answer naturally with precise citations and explicit unknowns.",
+    ]
+
+
+def test_explicit_super_agent_metric_request_still_routes_to_analysis() -> None:
+    result = assess_goal_node(_state("Super Agent WHTR by day"))
+
+    assert result["route"] == "analysis"
+    assert result["missing_fields"] == []
+    assert len(result["task_steps"]) == 5
+
+
+def test_metric_explanation_routes_to_knowledge_but_metric_trend_routes_to_analysis() -> None:
+    explanation = assess_goal_node(_state("WHTR 是什么"))
+    trend = assess_goal_node(_state("WHTR 每日趋势"))
+
+    assert explanation["route"] == "knowledge"
+    assert trend["route"] == "analysis"
 
 
 def test_ambiguous_analysis_requests_only_material_definition_and_time() -> None:
@@ -128,6 +156,49 @@ def test_user_taught_skill_selection_is_content_based_not_name_based() -> None:
     assert [skill["name"] for skill in selected] == ["team-method-42"]
 
 
+def test_memory_selection_prefers_relevant_approved_context() -> None:
+    memories = [
+        {"id": "1", "scope": "project", "key": "default_currency", "value": {"text": "CNY"}},
+        {
+            "id": "2",
+            "scope": "project",
+            "key": "super_agent_scope",
+            "value": {"text": "Super Agent supports assisted service workflows."},
+        },
+        {"id": "3", "scope": "project", "key": "chart_palette", "value": {"text": "blue"}},
+    ]
+
+    selected = select_relevant_memories("What is the Super Agent scope?", memories, limit=2)
+
+    assert selected[0]["id"] == "2"
+    assert all(memory["id"] != "1" for memory in selected)
+
+
+def test_analysis_narrative_renders_as_natural_conversation() -> None:
+    narrative = AnalysisNarrative(
+        executive_summary="我已经算完了，结果如下。",
+        confirmed_findings=[
+            NarrativeClaim(text="接受降级的比例是 12%。", evidence_ids=["evidence-1"])
+        ],
+        inferred_findings=[
+            NarrativeClaim(text="渠道差异可能值得继续看。", evidence_ids=["evidence-2"])
+        ],
+        unknowns=["当前没有活动时区定义。"],
+        next_actions=["按渠道拆开比较。"],
+        limitations=["UAT 样本量较小。"],
+    )
+
+    rendered = PhaseTwoChatService._render_analysis_narrative(narrative)
+
+    assert rendered.startswith("我已经算完了")
+    assert "（已确认，依据：evidence-1）" in rendered
+    assert "属于推断，不代表因果关系" in rendered
+    assert "Summary:" not in rendered
+    assert "Confirmed:" not in rendered
+    assert "Next actions:" not in rendered
+    assert "\n\n" in rendered
+
+
 def test_analysis_narrative_rejects_unknown_evidence_ids() -> None:
     narrative = AnalysisNarrative(
         executive_summary="Summary",
@@ -169,3 +240,13 @@ def test_second_turn_receives_bounded_conversation_context(client: TestClient) -
     ]
     assert len(context_events) == 1
     assert context_events[0]["safe_details"]["message_count"] == 2
+
+
+def test_diagnostic_followup_routes_using_prior_metric_context() -> None:
+    state = _state("为什么7月18日表现这么低")
+    state["combined_input"] = "<conversation_history>\n[USER] case creation rate daily trend\n</conversation_history>"
+
+    result = assess_goal_node(state)
+
+    assert result["route"] == "analysis"
+    assert result["missing_fields"] == []

@@ -1,0 +1,302 @@
+schema_version: 1
+kind: metric_file
+definitions:
+  - kind: metric
+    version: 1.0.0
+    status: active
+    owner: Super Agent Data and Operations
+    source: Explicit user clarification in chat 2026-07-17 and UAT physical catalog
+    effective_from: 2026-06-01
+    effective_to: null
+    last_reviewed_at: 2026-07-17
+    distinct_logic: visit_log is session grain; count each non-null session_id row exactly once without additional deduplication.
+    filters: [start_time is inside the approved half-open interval]
+    exclusions: [rows with null session_id, rows outside the requested time interval]
+    time_logic: {event_time_field: super_agent_uat.visit_log.start_time, timezone: Unknown, window: 'Half-open interval [start_date, end_date)', late_arrival_policy: Unknown}
+    supported_dimensions: [super_agent_uat.visit_log.start_time, super_agent_uat.visit_log.channel, super_agent_uat.visit_log.intent_type]
+    source_datasets: [super_agent_uat.visit_log]
+    business_rule_ids: []
+    id: super_agent_uat.cid_session_rate
+    name: CID Session Rate
+    description: Share of observed visit_log sessions classified as CID, meaning the customer self-resolved the case.
+    aliases: [CID share, CID session share, CID占比, CID session占比, is_cid rate, is_cid比例]
+    numerator: {expression: "SUM(CASE WHEN is_cid = '1' THEN 1 ELSE 0 END)", description: Session rows classified as CID., aggregation: sum, distinct_by: [], field_references: [super_agent_uat.visit_log.is_cid]}
+    denominator: {expression: SUM(CASE WHEN session_id IS NOT NULL THEN 1 ELSE 0 END), description: All observed non-null session rows., aggregation: sum, distinct_by: [], field_references: [super_agent_uat.visit_log.session_id]}
+    formula: CID session rows / all non-null session rows
+    interpretation_cautions: [Logical true maps to the physical string value '1' in UAT., A null or zero denominator returns Unknown., No channel filter is implied unless the user requests one.]
+  - kind: metric
+    version: 1.0.0
+    status: active
+    owner: Super Agent Data and Operations
+    source: User-provided UAT SQL confirmed 2026-07-17
+    effective_from: 2026-06-01
+    effective_to: null
+    last_reviewed_at: 2026-07-17
+    distinct_logic: Count visit_log rows exactly as supplied; no implicit deduplication.
+    filters: [start_time is inside the approved half-open interval, channel is not null]
+    exclusions: [rows with null channel, rows outside the requested time interval]
+    time_logic: {event_time_field: super_agent_uat.visit_log.start_time, timezone: Unknown, window: 'Half-open interval [start_date, end_date)', late_arrival_policy: Unknown}
+    supported_dimensions: [super_agent_uat.visit_log.start_time, super_agent_uat.visit_log.channel, super_agent_uat.visit_log.intent_type]
+    source_datasets: [super_agent_uat.visit_log]
+    business_rule_ids: []
+    id: super_agent_uat.whtr
+    name: WHTR
+    description: Working-hours transfer rate at visit_log row grain.
+    aliases: [working hours transfer rate, working hour transfer rate, 转人工率, 工作时间转人工率]
+    numerator: {expression: SUM(CASE WHEN to_agent_flag = TRUE AND agent_working_hour = TRUE THEN 1 ELSE 0 END), description: Working-hour rows transferred to an agent., aggregation: sum, distinct_by: [], field_references: [super_agent_uat.visit_log.to_agent_flag, super_agent_uat.visit_log.agent_working_hour]}
+    denominator: {expression: SUM(CASE WHEN agent_working_hour = TRUE THEN 1 ELSE 0 END), description: All working-hour rows., aggregation: sum, distinct_by: [], field_references: [super_agent_uat.visit_log.agent_working_hour]}
+    formula: transfer_volume / wh_volume
+    interpretation_cautions: [Boolean-compatible field representation should be checked if source encoding changes., A null or zero denominator returns Unknown.]
+  - kind: metric
+    version: 1.0.0
+    status: active
+    owner: Super Agent Data and Operations
+    source: User-provided UAT SQL confirmed 2026-07-17
+    effective_from: 2026-06-01
+    effective_to: null
+    last_reviewed_at: 2026-07-17
+    distinct_logic: Count visit_log rows exactly as supplied; no implicit deduplication.
+    filters: [start_time is inside the approved half-open interval, channel is not null]
+    exclusions: [rows with null channel, rows outside the requested time interval]
+    time_logic: {event_time_field: super_agent_uat.visit_log.start_time, timezone: Unknown, window: 'Half-open interval [start_date, end_date)', late_arrival_policy: Unknown}
+    supported_dimensions: [super_agent_uat.visit_log.start_time, super_agent_uat.visit_log.channel, super_agent_uat.visit_log.intent_type]
+    source_datasets: [super_agent_uat.visit_log]
+    business_rule_ids: []
+    id: super_agent_uat.case_creation_rate
+    name: Case Creation Rate
+    description: Share of eligible serial-number rows that have an eTicket case number.
+    aliases: [case_creation_rate, case create rate]
+    numerator: {expression: SUM(CASE WHEN eticket_case_number IS NOT NULL THEN 1 ELSE 0 END), description: Rows with an eTicket case number., aggregation: sum, distinct_by: [], field_references: [super_agent_uat.visit_log.eticket_case_number]}
+    denominator: {expression: SUM(CASE WHEN serial_number IS NOT NULL AND (pd_triggered = 'yes' OR is_cid = '1') THEN 1 ELSE 0 END), description: Rows with a serial number that are PD-triggered or CID., aggregation: sum, distinct_by: [], field_references: [super_agent_uat.visit_log.serial_number, super_agent_uat.visit_log.pd_triggered, super_agent_uat.visit_log.is_cid]}
+    formula: case rows / eligible serial-number rows
+    interpretation_cautions: [Identifiers are aggregate-only and never returned as raw values., A null or zero denominator returns Unknown.]
+  - kind: metric
+    version: 1.0.0
+    status: active
+    owner: Super Agent Data and Operations
+    source: User-provided UAT SQL confirmed 2026-07-17
+    effective_from: 2026-06-01
+    effective_to: null
+    last_reviewed_at: 2026-07-17
+    distinct_logic: Count visit_log rows exactly as supplied; no implicit deduplication.
+    filters: [start_time is inside the approved half-open interval, channel is not null]
+    exclusions: [rows with null channel, rows outside the requested time interval]
+    time_logic: {event_time_field: super_agent_uat.visit_log.start_time, timezone: Unknown, window: 'Half-open interval [start_date, end_date)', late_arrival_policy: Unknown}
+    supported_dimensions: [super_agent_uat.visit_log.start_time, super_agent_uat.visit_log.channel, super_agent_uat.visit_log.intent_type]
+    source_datasets: [super_agent_uat.visit_log]
+    business_rule_ids: []
+    id: super_agent_uat.touchless_rate
+    name: Touchless Rate
+    description: Share of case-created rows classified as touchless.
+    aliases: [fully automated rate]
+    numerator: {expression: SUM(CASE WHEN eticket_case_number IS NOT NULL AND touchless_exception = 'touchless' THEN 1 ELSE 0 END), description: Case rows classified as touchless., aggregation: sum, distinct_by: [], field_references: [super_agent_uat.visit_log.eticket_case_number, super_agent_uat.visit_log.touchless_exception]}
+    denominator: {expression: SUM(CASE WHEN eticket_case_number IS NOT NULL THEN 1 ELSE 0 END), description: All case-created rows., aggregation: sum, distinct_by: [], field_references: [super_agent_uat.visit_log.eticket_case_number]}
+    formula: touchless_volume / sa_ticket_volume
+    interpretation_cautions: [This is row grain rather than distinct case grain., A null or zero denominator returns Unknown.]
+  - kind: metric
+    version: 1.0.0
+    status: active
+    owner: Super Agent Data and Operations
+    source: User-provided UAT SQL confirmed 2026-07-17
+    effective_from: 2026-06-01
+    effective_to: null
+    last_reviewed_at: 2026-07-17
+    distinct_logic: Count visit_log rows exactly as supplied; no implicit deduplication.
+    filters: [start_time is inside the approved half-open interval, channel is not null]
+    exclusions: [rows with null channel, rows outside the requested time interval]
+    time_logic: {event_time_field: super_agent_uat.visit_log.start_time, timezone: Unknown, window: 'Half-open interval [start_date, end_date)', late_arrival_policy: Unknown}
+    supported_dimensions: [super_agent_uat.visit_log.start_time, super_agent_uat.visit_log.channel, super_agent_uat.visit_log.intent_type]
+    source_datasets: [super_agent_uat.visit_log]
+    business_rule_ids: []
+    id: super_agent_uat.t3b_rate
+    name: T3B Rate
+    description: Share of submitted surveys with score 8 9 or 10.
+    aliases: [T3B, survey satisfaction]
+    numerator: {expression: "SUM(CASE WHEN survey_score IN ('8','9','10') THEN 1 ELSE 0 END)", description: Survey rows with T3B score., aggregation: sum, distinct_by: [], field_references: [super_agent_uat.visit_log.survey_score]}
+    denominator: {expression: SUM(CASE WHEN survey_score IS NOT NULL THEN 1 ELSE 0 END), description: All submitted survey rows., aggregation: sum, distinct_by: [], field_references: [super_agent_uat.visit_log.survey_score]}
+    formula: T3B survey rows / all submitted survey rows
+    interpretation_cautions: [Survey coverage should be reported with the rate., A null or zero denominator returns Unknown.]
+  - kind: metric
+    version: 1.0.0
+    status: active
+    owner: Super Agent Data and Operations
+    source: User-provided UAT SQL confirmed 2026-07-17
+    effective_from: 2026-06-01
+    effective_to: null
+    last_reviewed_at: 2026-07-17
+    distinct_logic: Count visit_log rows exactly as supplied; no implicit deduplication.
+    filters: [start_time is inside the approved half-open interval, channel is not null]
+    exclusions: [rows with null channel, rows outside the requested time interval]
+    time_logic: {event_time_field: super_agent_uat.visit_log.start_time, timezone: Unknown, window: 'Half-open interval [start_date, end_date)', late_arrival_policy: Unknown}
+    supported_dimensions: [super_agent_uat.visit_log.start_time, super_agent_uat.visit_log.channel, super_agent_uat.visit_log.intent_type]
+    source_datasets: [super_agent_uat.visit_log]
+    business_rule_ids: []
+    id: super_agent_uat.transfer_volume
+    name: Transfer Volume
+    description: Count of working-hour rows transferred to an agent.
+    aliases: [transfer_volume, transferred visits]
+    numerator: {expression: SUM(CASE WHEN to_agent_flag = TRUE AND agent_working_hour = TRUE THEN 1 ELSE 0 END), description: Matching visit_log rows., aggregation: sum, distinct_by: [], field_references: [super_agent_uat.visit_log.to_agent_flag, super_agent_uat.visit_log.agent_working_hour]}
+    denominator: null
+    formula: SUM(working-hour transferred rows)
+    interpretation_cautions: [Row grain is used exactly as supplied.]
+  - kind: metric
+    version: 1.0.0
+    status: active
+    owner: Super Agent Data and Operations
+    source: User-provided UAT SQL confirmed 2026-07-17
+    effective_from: 2026-06-01
+    effective_to: null
+    last_reviewed_at: 2026-07-17
+    distinct_logic: Count visit_log rows exactly as supplied; no implicit deduplication.
+    filters: [start_time is inside the approved half-open interval, channel is not null]
+    exclusions: [rows with null channel, rows outside the requested time interval]
+    time_logic: {event_time_field: super_agent_uat.visit_log.start_time, timezone: Unknown, window: 'Half-open interval [start_date, end_date)', late_arrival_policy: Unknown}
+    supported_dimensions: [super_agent_uat.visit_log.start_time, super_agent_uat.visit_log.channel, super_agent_uat.visit_log.intent_type]
+    source_datasets: [super_agent_uat.visit_log]
+    business_rule_ids: []
+    id: super_agent_uat.working_hour_volume
+    name: Working Hour Volume
+    description: Count of visit rows marked as occurring in agent working hours.
+    aliases: [WH volume, wh_volume, working-hours visits]
+    numerator: {expression: SUM(CASE WHEN agent_working_hour = TRUE THEN 1 ELSE 0 END), description: Working-hour visit_log rows., aggregation: sum, distinct_by: [], field_references: [super_agent_uat.visit_log.agent_working_hour]}
+    denominator: null
+    formula: SUM(working-hour rows)
+    interpretation_cautions: [Row grain is used exactly as supplied.]
+  - kind: metric
+    version: 1.0.0
+    status: active
+    owner: Super Agent Data and Operations
+    source: User-provided UAT SQL confirmed 2026-07-17
+    effective_from: 2026-06-01
+    effective_to: null
+    last_reviewed_at: 2026-07-17
+    distinct_logic: Count visit_log rows exactly as supplied; no implicit deduplication.
+    filters: [start_time is inside the approved half-open interval, channel is not null]
+    exclusions: [rows with null channel, rows outside the requested time interval]
+    time_logic: {event_time_field: super_agent_uat.visit_log.start_time, timezone: Unknown, window: 'Half-open interval [start_date, end_date)', late_arrival_policy: Unknown}
+    supported_dimensions: [super_agent_uat.visit_log.start_time, super_agent_uat.visit_log.channel, super_agent_uat.visit_log.intent_type]
+    source_datasets: [super_agent_uat.visit_log]
+    business_rule_ids: []
+    id: super_agent_uat.sa_ticket_volume
+    name: SA Ticket Volume
+    description: Count of rows with a non-null eTicket case number.
+    aliases: [sa_ticket_volume, ticket volume]
+    numerator: {expression: SUM(CASE WHEN eticket_case_number IS NOT NULL THEN 1 ELSE 0 END), description: Rows with an eTicket case number., aggregation: sum, distinct_by: [], field_references: [super_agent_uat.visit_log.eticket_case_number]}
+    denominator: null
+    formula: SUM(rows with eTicket case number)
+    interpretation_cautions: [The identifier is aggregate-only., Multiple rows with one case number are not deduplicated.]
+  - kind: metric
+    version: 1.0.0
+    status: active
+    owner: Super Agent Data and Operations
+    source: User-provided UAT SQL confirmed 2026-07-17
+    effective_from: 2026-06-01
+    effective_to: null
+    last_reviewed_at: 2026-07-17
+    distinct_logic: Count visit_log rows exactly as supplied; no implicit deduplication.
+    filters: [start_time is inside the approved half-open interval, channel is not null]
+    exclusions: [rows with null channel, rows outside the requested time interval]
+    time_logic: {event_time_field: super_agent_uat.visit_log.start_time, timezone: Unknown, window: 'Half-open interval [start_date, end_date)', late_arrival_policy: Unknown}
+    supported_dimensions: [super_agent_uat.visit_log.start_time, super_agent_uat.visit_log.channel, super_agent_uat.visit_log.intent_type]
+    source_datasets: [super_agent_uat.visit_log]
+    business_rule_ids: []
+    id: super_agent_uat.touchless_volume
+    name: Touchless Volume
+    description: Count of case-created rows classified as touchless.
+    aliases: [touchless_volume, automated case volume]
+    numerator: {expression: SUM(CASE WHEN eticket_case_number IS NOT NULL AND touchless_exception = 'touchless' THEN 1 ELSE 0 END), description: Matching case-created rows., aggregation: sum, distinct_by: [], field_references: [super_agent_uat.visit_log.eticket_case_number, super_agent_uat.visit_log.touchless_exception]}
+    denominator: null
+    formula: SUM(touchless case-created rows)
+    interpretation_cautions: [Row grain is used exactly as supplied.]
+  - kind: metric
+    version: 1.0.0
+    status: active
+    owner: Super Agent Data and Operations
+    source: User-provided UAT SQL confirmed 2026-07-17
+    effective_from: 2026-06-01
+    effective_to: null
+    last_reviewed_at: 2026-07-17
+    distinct_logic: Count visit_log rows exactly as supplied; no implicit deduplication.
+    filters: [start_time is inside the approved half-open interval, channel is not null]
+    exclusions: [rows with null channel, rows outside the requested time interval]
+    time_logic: {event_time_field: super_agent_uat.visit_log.start_time, timezone: Unknown, window: 'Half-open interval [start_date, end_date)', late_arrival_policy: Unknown}
+    supported_dimensions: [super_agent_uat.visit_log.start_time, super_agent_uat.visit_log.channel, super_agent_uat.visit_log.intent_type]
+    source_datasets: [super_agent_uat.visit_log]
+    business_rule_ids: []
+    id: super_agent_uat.partial_touchless_volume
+    name: Partial Touchless Volume
+    description: Count of case-created rows classified as partial touchless.
+    aliases: [partial_touchless_volume, partially automated case volume]
+    numerator: {expression: SUM(CASE WHEN eticket_case_number IS NOT NULL AND touchless_exception = 'partial touchless' THEN 1 ELSE 0 END), description: Matching case-created rows., aggregation: sum, distinct_by: [], field_references: [super_agent_uat.visit_log.eticket_case_number, super_agent_uat.visit_log.touchless_exception]}
+    denominator: null
+    formula: SUM(partial-touchless case-created rows)
+    interpretation_cautions: [The literal value includes a space exactly as supplied.]
+  - kind: metric
+    version: 1.0.0
+    status: active
+    owner: Super Agent Data and Operations
+    source: User-provided UAT SQL confirmed 2026-07-17
+    effective_from: 2026-06-01
+    effective_to: null
+    last_reviewed_at: 2026-07-17
+    distinct_logic: Count visit_log rows exactly as supplied; no implicit deduplication.
+    filters: [start_time is inside the approved half-open interval, channel is not null]
+    exclusions: [rows with null channel, rows outside the requested time interval]
+    time_logic: {event_time_field: super_agent_uat.visit_log.start_time, timezone: Unknown, window: 'Half-open interval [start_date, end_date)', late_arrival_policy: Unknown}
+    supported_dimensions: [super_agent_uat.visit_log.start_time, super_agent_uat.visit_log.channel, super_agent_uat.visit_log.intent_type]
+    source_datasets: [super_agent_uat.visit_log]
+    business_rule_ids: []
+    id: super_agent_uat.case_only_volume
+    name: Case Only Volume
+    description: Count of case-created rows classified as cased.
+    aliases: [case_only_volume, cased volume]
+    numerator: {expression: SUM(CASE WHEN eticket_case_number IS NOT NULL AND touchless_exception = 'cased' THEN 1 ELSE 0 END), description: Matching cased rows., aggregation: sum, distinct_by: [], field_references: [super_agent_uat.visit_log.eticket_case_number, super_agent_uat.visit_log.touchless_exception]}
+    denominator: null
+    formula: SUM(cased case-created rows)
+    interpretation_cautions: [Row grain is used exactly as supplied.]
+  - kind: metric
+    version: 1.0.0
+    status: active
+    owner: Super Agent Data and Operations
+    source: User-provided UAT SQL confirmed 2026-07-17
+    effective_from: 2026-06-01
+    effective_to: null
+    last_reviewed_at: 2026-07-17
+    distinct_logic: Count visit_log rows exactly as supplied; no implicit deduplication.
+    filters: [start_time is inside the approved half-open interval, channel is not null]
+    exclusions: [rows with null channel, rows outside the requested time interval]
+    time_logic: {event_time_field: super_agent_uat.visit_log.start_time, timezone: Unknown, window: 'Half-open interval [start_date, end_date)', late_arrival_policy: Unknown}
+    supported_dimensions: [super_agent_uat.visit_log.start_time, super_agent_uat.visit_log.channel, super_agent_uat.visit_log.intent_type]
+    source_datasets: [super_agent_uat.visit_log]
+    business_rule_ids: []
+    id: super_agent_uat.foc_volume
+    name: FOC Volume
+    description: Count of rows where the FOC flag is true.
+    aliases: [foc_volume, fixed on contact volume]
+    numerator: {expression: SUM(CASE WHEN is_foc = TRUE THEN 1 ELSE 0 END), description: FOC visit_log rows., aggregation: sum, distinct_by: [], field_references: [super_agent_uat.visit_log.is_foc]}
+    denominator: null
+    formula: SUM(FOC rows)
+    interpretation_cautions: [The supplied SQL does not define an FOC rate denominator.]
+  - kind: metric
+    version: 1.0.0
+    status: active
+    owner: Super Agent Data and Operations
+    source: User-provided UAT SQL confirmed 2026-07-17
+    effective_from: 2026-06-01
+    effective_to: null
+    last_reviewed_at: 2026-07-17
+    distinct_logic: Count visit_log rows exactly as supplied; no implicit deduplication.
+    filters: [start_time is inside the approved half-open interval, channel is not null]
+    exclusions: [rows with null channel, rows outside the requested time interval]
+    time_logic: {event_time_field: super_agent_uat.visit_log.start_time, timezone: Unknown, window: 'Half-open interval [start_date, end_date)', late_arrival_policy: Unknown}
+    supported_dimensions: [super_agent_uat.visit_log.start_time, super_agent_uat.visit_log.channel, super_agent_uat.visit_log.intent_type]
+    source_datasets: [super_agent_uat.visit_log]
+    business_rule_ids: []
+    id: super_agent_uat.survey_volume
+    name: Survey Volume
+    description: Count of rows with a submitted survey score.
+    aliases: [survey_volume, submitted survey volume]
+    numerator: {expression: SUM(CASE WHEN survey_score IS NOT NULL THEN 1 ELSE 0 END), description: Rows with survey scores., aggregation: sum, distinct_by: [], field_references: [super_agent_uat.visit_log.survey_score]}
+    denominator: null
+    formula: SUM(rows with non-null survey score)
+    interpretation_cautions: [Survey coverage should be reported with survey-derived rates.]

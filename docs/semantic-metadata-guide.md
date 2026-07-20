@@ -60,8 +60,10 @@ deliberately postponed.
 
 The planner first obtains a structured analytical intent, then resolves the active metric and its
 fields and relationships, checks them against the connector catalog, and only then creates and
-validates SQL. The plan, approval payload, safe plan API, and audit trace include the selected
-metric definition ID/version and applicable relationship references.
+validates SQL. The plan, approval payload, safe plan API, audit trace, and result artifact include the selected
+metric definition ID/version, applicable relationship references, and active dataset business-rule
+IDs/versions. Business-rule expressions are parsed and then passed through the same SQL AST policy
+gateway as the rest of the query.
 
 If an alias maps to multiple active metrics, the LangGraph run interrupts and asks for an exact
 metric ID. If no active definition matches, the run stops with `Unknown`; it does not invent a
@@ -79,3 +81,13 @@ The Super Agent 930 workbook is stored as source-backed Knowledge and represente
 metadata. Draft definitions are visible in the registry API but never participate in SQL planning.
 Version 930 fields are explicitly marked not implemented; activation requires owner approval,
 read-only connector configuration, and validation against the physical schema.
+
+
+## Current Super Agent population rule
+
+'Super Agent Valid User Traffic Population' is active as
+'super_agent.valid_user_traffic_population@1.0.0'. It applies to visit, turn, and telemetry
+datasets. Direct visit calculations use its approved condition; turn and telemetry calculations
+inherit the population through session membership in visit_log. The Knowledge admin page exposes
+the active version, expression, owner, provenance, applicable datasets, and caveats. A meaning
+change requires a reviewed new semantic version.

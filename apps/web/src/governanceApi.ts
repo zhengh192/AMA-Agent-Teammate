@@ -48,6 +48,26 @@ export interface AnalysisSkillView {
   path: string;
 }
 
+export interface BusinessRuleView {
+  kind: "business_rule";
+  id: string;
+  version: string;
+  status: "draft" | "active" | "deprecated";
+  name: string;
+  description: string;
+  owner: string;
+  source: string;
+  effective_from: string;
+  effective_to: string | null;
+  last_reviewed_at: string;
+  statement: string;
+  expression: string | null;
+  applies_to: string[];
+  references: string[];
+  severity: "informational" | "warning" | "blocking";
+  caveats: string[];
+}
+
 export interface LearnedMetricView {
   id: string;
   metric_key: string;
@@ -95,6 +115,9 @@ export interface MemoryProposal {
   source: string;
   payload_hash: string;
   status: string;
+  expires_at: string | null;
+  created_at: string;
+  decided_at: string | null;
 }
 
 export interface MemoryView {
@@ -105,6 +128,17 @@ export interface MemoryView {
   value: Record<string, unknown>;
   source: string;
   status: string;
+  expires_at: string | null;
+  created_at: string;
+  deleted_at: string | null;
+}
+
+export interface MemoryInput {
+  scope: "session" | "project" | "user_preference" | "entity";
+  key: string;
+  value: Record<string, unknown>;
+  source: string;
+  expires_at: string | null;
 }
 
 async function json<T>(response: Response): Promise<T> {
@@ -143,6 +177,11 @@ export const governanceApi = {
   async learnedMetrics(query?: string): Promise<LearnedMetricView[]> {
     const suffix = query ? `?q=${encodeURIComponent(query)}` : "";
     return json(await fetch(`/api/learned-metrics${suffix}`));
+  },
+  async businessRules(): Promise<BusinessRuleView[]> {
+    return json(await fetch(
+      "/api/semantic-metadata?definition_type=business_rule&status=active"
+    ));
   },  async analysisSkills(): Promise<AnalysisSkillView[]> {
     return json(await fetch("/api/analysis-skills"));
   },
@@ -172,16 +211,21 @@ export const governanceApi = {
   async memories(): Promise<MemoryView[]> {
     return json(await fetch("/api/memories"));
   },
-  async proposeMemory(key: string, value: string): Promise<MemoryProposal> {
+  async proposeMemory(input: MemoryInput): Promise<MemoryProposal> {
     return json(await fetch("/api/memories/proposals", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        scope: "project",
-        key,
-        value: { text: value },
-        source: "explicit UI proposal",
-      }),
+      body: JSON.stringify(input),
+    }));
+  },
+  async editMemory(
+    id: string,
+    input: Pick<MemoryInput, "value" | "source" | "expires_at">,
+  ): Promise<MemoryProposal> {
+    return json(await fetch(`/api/memories/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
     }));
   },
   async decideMemory(proposal: MemoryProposal, decision: "approved" | "rejected") {

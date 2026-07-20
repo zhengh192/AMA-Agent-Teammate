@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 test("separates Knowledge, Skills, and Memory administration", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Knowledge" })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Open administration" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "打开后台" })).toBeVisible();
 
   await page.goto("/admin");
   await expect(page.getByRole("heading", { name: "Build the Agent's governed capability over time" })).toBeVisible();
@@ -31,9 +31,10 @@ test("separates Knowledge, Skills, and Memory administration", async ({ page }) 
   await page.getByRole("link", { name: "Skills", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Package contract" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Installed analysis skills" })).toBeVisible();
-  await expect(page.getByText("9 packages", { exact: true })).toBeVisible();
+  await expect(page.getByText("10 packages", { exact: true })).toBeVisible();
   await expect(page.locator(".installed-skill").filter({ hasText: "Metric Query" })).toBeVisible();
   await expect(page.locator(".installed-skill").filter({ hasText: "Data Quality Check" })).toBeVisible();
+  await expect(page.locator(".installed-skill").filter({ hasText: "Case Journey Diagnostics" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Taught skill proposals" })).toBeVisible();
   await expect(page.locator(".package-tree code").filter({ hasText: "SKILL.md" })).toBeVisible();
 
@@ -44,13 +45,13 @@ test("separates Knowledge, Skills, and Memory administration", async ({ page }) 
 
 test("creates a Skill proposal in Agent and approves its package in administration", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "+ New session" }).click();
+  await page.getByRole("button", { name: "+ 新对话" }).click();
   await page.getByRole("textbox", { name: "Message" }).fill(
     "When analyzing conversion decline, first check completeness, then Geo, Channel, and Intent contribution."
   );
-  await page.getByRole("button", { name: "Send" }).click();
-  await expect(page.getByText(/pending in the admin console/)).toBeVisible();
-  await expect(page.locator(".status")).toHaveText("Completed");
+  await page.getByRole("button", { name: "发送" }).click();
+  await expect(page.getByText(/waiting for your review in the admin console/)).toBeVisible();
+  await expect(page.locator(".status")).toHaveText("可以继续聊");
 
   await page.goto("/admin/skills");
   const proposal = page.locator(".proposal").filter({ hasText: "conversion-decline-analysis" }).filter({ hasText: "pending_approval" }).first();

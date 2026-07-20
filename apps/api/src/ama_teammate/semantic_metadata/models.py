@@ -62,6 +62,7 @@ class DatasetDefinition(LifecycleDefinition):
     schema_name: Identifier | None = None
     grain: NonEmpty
     primary_key_fields: list[Identifier] = Field(default_factory=list, max_length=20)
+    business_rule_ids: list[Identifier] = Field(default_factory=list, max_length=30)
     caveats: list[NonEmpty] = Field(default_factory=list, max_length=20)
 
 

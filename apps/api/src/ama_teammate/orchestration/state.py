@@ -10,9 +10,10 @@ class AgentState(TypedDict, total=False):
     user_id: str
     input_text: str
     combined_input: str
-    route: Literal["chat", "analysis", "knowledge"]
+    route: Literal["chat", "analysis", "knowledge", "jira"]
     task_goal: str
     decision_summary: str
+    task_steps: list[str]
     status: str
     analysis_question: str
     missing_fields: list[str]
@@ -29,3 +30,9 @@ class AgentState(TypedDict, total=False):
     analysis_result_ref: str
     final_answer_ref: str
     selected_skill_refs: list[dict[str, str]]
+    jira_issue_keys: list[str]
+    jira_status: str
+    jira_fast_answer: str
+    jira_action_type: str
+    jira_action_json: str
+    jira_action_ref: str

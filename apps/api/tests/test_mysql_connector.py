@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from ama_teammate.config import Settings
 from ama_teammate.data_access.models import QueryExecutionFailure, QueryExecutionRequest
 from ama_teammate.data_access.mysql import (
     MySQLCatalogSnapshot,
@@ -69,6 +70,22 @@ def snapshot() -> MySQLCatalogSnapshot:
     )
 
 
+def test_production_rejects_uat_detail_field_switch() -> None:
+    settings = Settings(
+        _env_file=None,
+        ama_env="production",
+        ama_super_agent_uat_query_enabled=True,
+        ama_super_agent_uat_host="uat.example.internal",
+        ama_super_agent_uat_username="read_only",
+        ama_super_agent_uat_password="secret",
+        ama_super_agent_uat_allow_detail_fields=True,
+    )
+    assert (
+        "AMA_SUPER_AGENT_UAT_ALLOW_DETAIL_FIELDS is development-only"
+        in settings.super_agent_uat_runtime_validation_errors()
+    )
+
+
 def test_options_redaction_never_exposes_credentials_or_host() -> None:
     redacted = options().redacted()
     rendered = str(redacted)
@@ -102,10 +119,7 @@ def test_grant_assessment_accepts_select_and_rejects_write_privileges() -> None:
     "sql",
     [
         "SELECT session_id FROM visit_log LIMIT 10",
-        (
-            "WITH recent AS (SELECT session_id FROM sa_logs.visit_log) "
-            "SELECT session_id FROM recent"
-        ),
+        ("WITH recent AS (SELECT session_id FROM sa_logs.visit_log) SELECT session_id FROM recent"),
     ],
 )
 def test_mysql_sql_guard_accepts_allowlisted_selects(sql: str) -> None:
@@ -172,6 +186,27 @@ def test_discovered_config_denies_likely_sensitive_payload_columns() -> None:
     )
     assert "user_input" in config.denied_columns
     assert config.redacted()["secret_ref"] == "[REDACTED]"
+
+
+def test_discovered_config_allows_encrypted_detail_fields_when_explicitly_enabled() -> None:
+    config = snapshot().to_source_config(
+        secret_ref="env:super_agent_uat",
+        timeout_seconds=15,
+        max_rows=1_000,
+        max_result_bytes=1_048_576,
+        allow_detail_fields=True,
+    )
+    assert config.denied_columns == set()
+    assert config.aggregate_only_columns == set()
+    validate_mysql_select(
+        "SELECT turn_id, user_input FROM turn_log LIMIT 10",
+        database="sa_logs",
+        allowed_tables=frozenset({"turn_log"}),
+        denied_columns=frozenset(config.denied_columns),
+        aggregate_only_columns=frozenset(config.aggregate_only_columns),
+    )
+
+
 def test_mysql_parameter_adapter_uses_driver_named_parameters() -> None:
     sql = "SELECT session_id FROM visit_log WHERE start_time >= :start_date"
     assert _pymysql_parameter_sql(sql, {"start_date": "2026-06-01"}) == (
@@ -188,3 +223,23 @@ def test_mysql_sql_guard_rejects_discovered_sensitive_columns() -> None:
             denied_columns=frozenset({"user_input"}),
         )
     assert exc_info.value.category == "policy"
+
+
+def test_mysql_guard_allows_protected_identifier_only_inside_aggregate() -> None:
+    aggregate_sql = (
+        "SELECT SUM(CASE WHEN eticket_case_number IS NOT NULL THEN 1 ELSE 0 END) AS value "
+        "FROM visit_log"
+    )
+    validate_mysql_select(
+        aggregate_sql,
+        database="sa_logs",
+        allowed_tables=frozenset({"visit_log"}),
+        aggregate_only_columns=frozenset({"eticket_case_number"}),
+    )
+    with pytest.raises(QueryExecutionFailure):
+        validate_mysql_select(
+            "SELECT eticket_case_number FROM visit_log",
+            database="sa_logs",
+            allowed_tables=frozenset({"visit_log"}),
+            aggregate_only_columns=frozenset({"eticket_case_number"}),
+        )

@@ -5,6 +5,8 @@ from collections.abc import Iterator
 
 from fastapi.testclient import TestClient
 
+from ama_teammate.domain.models import ProviderEvent, ProviderUsage
+
 
 def parse_sse(lines: Iterator[str]) -> list[tuple[str, dict[str, object]]]:
     events: list[tuple[str, dict[str, object]]] = []
@@ -53,7 +55,8 @@ def test_mock_chat_stream_persists_messages_and_trace(client: TestClient) -> Non
     messages = client.get(f"/api/sessions/{session_id}/messages").json()
     assert [message["role"] for message in messages] == ["user", "assistant"]
     assert messages[-1]["epistemic_label"] == "Confirmed"
-    assert "Mock Provider" in messages[-1]["content"]
+    assert "我结合前面的对话" in messages[-1]["content"]
+    assert "<current_request>" not in messages[-1]["content"]
 
     trace = client.get(f"/api/runs/{run_id}/trace")
     assert trace.status_code == 200
@@ -94,7 +97,9 @@ def test_ambiguous_analysis_interrupts_and_resumes(client: TestClient) -> None:
     assert approval["plan"]["queries"]
     assert not any(name == "run.completed" for name, _ in resumed_events)
     messages = client.get(f"/api/sessions/{session_id}/messages").json()
-    assert [message["role"] for message in messages] == ["user", "user"]
+    assert [message["role"] for message in messages] == ["user", "assistant", "user"]
+    assert messages[1]["content"] == clarification["question"]
+    assert messages[1]["epistemic_label"] == "Need confirmation"
 
 
 def test_session_ownership_is_enforced(client: TestClient) -> None:
@@ -102,6 +107,18 @@ def test_session_ownership_is_enforced(client: TestClient) -> None:
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "session_not_found"
 
+
+def test_deleted_session_is_hidden_and_no_longer_accessible(client: TestClient) -> None:
+    session_id = create_session(client)
+
+    response = client.delete(f"/api/sessions/{session_id}")
+
+    assert response.status_code == 204
+    assert session_id not in {item["id"] for item in client.get("/api/sessions").json()}
+    missing = client.get(f"/api/sessions/{session_id}/messages")
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "session_not_found"
+    assert client.delete(f"/api/sessions/{session_id}").status_code == 404
 
 def test_provider_smoke_uses_safe_mock_result(client: TestClient) -> None:
     response = client.post("/api/provider/smoke")
@@ -114,3 +131,36 @@ def test_provider_smoke_uses_safe_mock_result(client: TestClient) -> None:
         "error_code": None,
         "safe_message": None,
     }
+
+
+def test_empty_provider_stream_uses_nonempty_audited_fallback(
+    client: TestClient, monkeypatch
+) -> None:
+    provider = client.app.state.providers.provider
+
+    async def empty_stream(self, messages, profile):
+        del self, messages, profile
+        yield ProviderEvent(
+            event_type="response.completed",
+            usage=ProviderUsage(input_tokens=0, output_tokens=0, total_tokens=0),
+        )
+
+    monkeypatch.setattr(type(provider), "stream", empty_stream)
+    session_id = create_session(client)
+    with client.stream(
+        "POST",
+        f"/api/sessions/{session_id}/messages/stream",
+        json={"content": "Hello after an empty provider response"},
+    ) as response:
+        assert response.status_code == 200
+        events = parse_sse(response.iter_lines())
+
+    deltas = [str(data["delta"]) for name, data in events if name == "message.delta"]
+    assert deltas
+    assert "".join(deltas).strip()
+    run_id = str(next(data["run_id"] for name, data in events if name == "run.started"))
+    messages = client.get(f"/api/sessions/{session_id}/messages").json()
+    assert messages[-1]["content"].strip()
+    assert messages[-1]["epistemic_label"] == "Unknown"
+    trace = client.get(f"/api/runs/{run_id}/trace").json()
+    assert "provider.empty_response" in [event["event_type"] for event in trace]

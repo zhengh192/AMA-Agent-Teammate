@@ -47,53 +47,63 @@ def build_analysis_node_functions(analysis_service: AnalysisService) -> tuple[An
             )
             return await analysis_service.create_plan(revised)
         except MetricLearningRequired as exc:
-            response = interrupt(
-                {
-                    "kind": "metric_definition_required",
-                    "question": exc.prompt,
-                    "metric_name": exc.metric_name,
-                    "missing_fields": [
-                        "table",
-                        "aggregation",
-                        "value_field",
-                        "time_field",
-                    ],
-                    "example": exc.example,
-                }
-            )
-            answer = str(response).strip()
-            try:
-                learned = await analysis_service.learn_metric_from_clarification(
-                    dict(state),
-                    metric_name=exc.metric_name,
-                    original_question=exc.question,
-                    clarification=answer,
-                )
-            except MetricLearningInputError as parse_error:
-                correction = interrupt(
+            answers: list[str] = []
+            correction_message: str | None = None
+            while True:
+                response = interrupt(
                     {
-                        "kind": "metric_definition_correction",
-                        "question": (
-                            f"这个定义还不能唯一执行：{parse_error} "
-                            "请补充缺失信息；可以直接复制下面格式修改。"
+                        "kind": (
+                            "metric_definition_correction"
+                            if correction_message
+                            else "metric_definition_required"
                         ),
-                        "missing_fields": ["executable_metric_definition"],
+                        "question": correction_message or exc.prompt,
+                        "metric_name": exc.metric_name,
+                        "missing_fields": (
+                            ["metric_definition_detail"]
+                            if correction_message
+                            else exc.missing_fields
+                        ),
                         "example": exc.example,
                     }
                 )
-                learned = await analysis_service.learn_metric_from_clarification(
-                    dict(state),
-                    metric_name=exc.metric_name,
-                    original_question=exc.question,
-                    clarification=str(correction).strip(),
+                answer = str(response).strip()
+                if answer:
+                    answers.append(answer)
+                combined_answer = "\n".join(answers)
+                candidate_state = dict(state)
+                candidate_state["analysis_question"] = f"{exc.question}\n{combined_answer}"
+                candidate_state["combined_input"] = (
+                    f"{state.get('combined_input', state.get('input_text', ''))}\n"
+                    f"Field clarification:\n{combined_answer}"
                 )
+                try:
+                    return await analysis_service.create_plan(candidate_state)
+                except (MetricLearningRequired, AnalysisDefinitionNeedsClarification):
+                    pass
+                try:
+                    learned = await analysis_service.learn_metric_from_clarification(
+                        dict(state),
+                        metric_name=exc.metric_name,
+                        original_question=exc.question,
+                        clarification=combined_answer,
+                    )
+                    break
+                except MetricLearningInputError as parse_error:
+                    correction_message = (
+                        "前面说过的我都记着，不用从头再来。"
+                        f"现在还有一点没对上：{parse_error}"
+                        "你把这一点告诉我，我就接着往下做。"
+                    )
             revised = dict(state)
             original = str(state.get("combined_input", state.get("input_text", "")))
             revised["combined_input"] = (
                 f"{original}\nConfirmed learned metric: {learned.display_name} "
                 f"version {learned.version}."
             )
-            revised["analysis_question"] = str(state.get("input_text", exc.question))
+            revised["analysis_question"] = (
+                f"{state.get('input_text', exc.question)}\n{combined_answer}"
+            )
             return await analysis_service.create_plan(revised)
         except MetadataAmbiguousError as exc:
             response = interrupt(

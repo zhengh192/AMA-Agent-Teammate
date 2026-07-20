@@ -83,6 +83,8 @@ class AzureOpenAIProvider:
             model=profile.deployment,
             input=api_input,
             stream=True,
+            reasoning={"effort": self.settings.azure_openai_reasoning_effort},
+            max_output_tokens=self.settings.azure_openai_max_output_tokens,
         )
         async for event in stream:
             event_type = str(getattr(event, "type", "unknown"))

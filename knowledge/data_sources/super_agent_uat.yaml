@@ -32,7 +32,8 @@ definition:
       schema_name: sa_logs
       grain: One physical record per observed Super Agent session.
       primary_key_fields: [super_agent_uat.visit_log.session_id]
-      caveats: [Doris declares every field nullable., Timezone and late-arrival policy are unknown.]
+      business_rule_ids: [super_agent.valid_user_traffic_population]
+      caveats: [Doris declares every field nullable., Timezone and late-arrival policy are unknown., Development UAT detail reads are permitted only when the encrypted-field policy switch is enabled.]
     - kind: dataset
       id: super_agent_uat.turn_log
       version: 1.0.0
@@ -49,7 +50,8 @@ definition:
       schema_name: sa_logs
       grain: One physical record per observed interaction turn.
       primary_key_fields: [super_agent_uat.turn_log.turn_id]
-      caveats: [Doris declares every field nullable., Transcript and response fields are denied.]
+      business_rule_ids: [super_agent.valid_user_traffic_population]
+      caveats: [Doris declares every field nullable., Transcript and response fields are encrypted or tokenized and may be selected only in bounded approved development UAT queries.]
     - kind: dataset
       id: super_agent_uat.telemetry_log
       version: 1.0.0
@@ -66,4 +68,5 @@ definition:
       schema_name: sa_logs
       grain: One physical record per frontend telemetry event.
       primary_key_fields: [super_agent_uat.telemetry_log.event_id]
-      caveats: [Event payload data is denied., Timezone and event taxonomy are not approved.]
+      business_rule_ids: [super_agent.valid_user_traffic_population]
+      caveats: [Event payload data is encrypted or tokenized and may be selected only in bounded approved development UAT queries., Timezone and event taxonomy are not approved.]
