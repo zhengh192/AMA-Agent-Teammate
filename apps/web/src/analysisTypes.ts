@@ -22,6 +22,8 @@ export interface AnalysisPlanView {
   success_criteria: string;
   metadata_confidence: "authoritative" | "working_assumption" | "learned_definition";
   assumptions: string[];
+  response_language?: "en" | "zh-CN";
+  journey_diagnostic_contract?: Record<string, unknown> | null;
   queries: AnalysisQueryPreview[];
   join_plan: Record<string, unknown> | null;
   policy_version: string;

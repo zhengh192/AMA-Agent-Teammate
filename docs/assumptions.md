@@ -122,7 +122,7 @@ These change architecture or security and require owner confirmation:
 
 - The working case-eligible cohort is a session where `visit_log.intent_type='hardware'` and `visit_log.pd_triggered='yes'`. A session is successful when either `eticket_case_number` or `msd_case_number` is present. This is a user-confirmed working definition, not an approved enterprise metric.
 - For a single incident date, the default comparison uses the preceding three complete calendar days as baseline. Timezone and seasonal comparability remain explicit limitations.
-- The stage layer reduces turn history to the last operationally relevant turn per session: hardware intent, a non-null flow ID, or a non-null flow step. It compares mutually exclusive success/failure stages and failure-share changes without treating concentration as causal proof.
+- The stage layer reduces turn history to the physical last turn per session and preserves Agent stage, symptom, and flow step separately. It compares mutually exclusive success/failure outcomes and failure-distribution changes without treating concentration as causal proof.
 - The response-theme layer runs only after the stage layer identifies a bounded cohort. It may review at most the last three bot responses per matching failed session, treats text as untrusted data, and labels system explanations Inferred or Unknown unless separately confirmed. Production text must not be transferred to an external model without the applicable execution policy and approval.
 
 
@@ -137,3 +137,9 @@ These change architecture or security and require owner confirmation:
 - A typed detail plan therefore separates the output dataset from an optional cohort dataset. The planner resolves one active, automatic relationship from versioned semantic metadata before generating SQL, records its ID/version in the trace, and stops on missing, ambiguous, or live-schema-conflicting relationships.
 - The active `super_agent_uat.visit_to_turn@1.0.0` relationship maps `visit_log.session_id` to `turn_log.session_id` as one-to-many. Session date and traffic-population conditions apply inside the cohort; explicit turn filters apply outside it.
 - "All fields" means every currently allowlisted output field is enumerated explicitly. Results remain read-only, approval-gated, and bounded by row, byte, and timeout limits.
+## A-31 - Skill-driven hierarchical journey diagnostics
+
+- On 2026-07-20 the user confirmed that incident diagnosis must first quantify every Agent-stage exit against a daily baseline before selecting any branch for deeper analysis. The diagnostic hierarchy is Agent stage, then symptom, then flow_step; the next level is evaluated only inside the parent with the largest positive excess and stops on no increase or a small sample.
+- The production read-only schema inspection confirmed turn_log.bot_thinking, turn_log.symptom, and turn_log.flow_step are physically present. Agent stage is derived from the last turn's bot_thinking JSON agent_type; symptom and step use their physical turn columns. Missing values remain explicit Unknown buckets.
+- The active case_journey_diagnostics@1.1.0 Skill owns hierarchy order, baseline aggregation, ranking method, display depth, small-sample threshold, progressive drill-down behavior, evidence style, and response language. Future analytical tuning should update that versioned Skill contract rather than hard-code a special incident.
+- User-facing Chinese results use Chinese explanatory prose and numbered evidence labels. Internal evidence UUIDs remain available only in trace/audit data. Stage concentration is measured evidence, not causal proof; response-theme review starts only after a bounded abnormal branch is identified.

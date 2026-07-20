@@ -1,12 +1,12 @@
 id: case_journey_diagnostics
 name: Case Journey Diagnostics
-version: 1.0.0
+version: 1.1.0
 status: active
 description: Diagnose case-volume or case-rate incidents by comparing success and failed-session exit stages before reviewing bounded response themes.
 owner: Super Agent Data and Operations
 reviewer: Data Governance
 created_at: 2026-07-19T00:00:00Z
-updated_at: 2026-07-19T00:00:00Z
+updated_at: 2026-07-20T15:52:55Z
 effective_from: 2026-07-19
 effective_to: null
 aliases:
@@ -68,10 +68,29 @@ required_tools:
   - plotly_validator
 deterministic_operations:
   - session_outcome_classification
-  - last_relevant_stage
-  - failure_share_shift
+  - last_turn_hierarchy
+  - daily_baseline_comparison
+  - progressive_failure_drilldown
   - small_sample_warning
 risk_level: medium
 approval:
   required: false
   reason: null
+journey_diagnostic_contract:
+  baseline_aggregation: daily_average
+  rank_by: excess_failed_sessions
+  hierarchy:
+    - key: agent_stage
+      label_en: Agent stage
+      label_zh: "\u0041\u0067\u0065\u006e\u0074 \u9636\u6bb5"
+    - key: symptom
+      label_en: Symptom
+      label_zh: "\u75c7\u72b6"
+    - key: flow_step
+      label_en: Step
+      label_zh: "\u6b65\u9aa4"
+  show_top_n: 5
+  small_sample_threshold: 5
+  drill_down_only_positive_parent: true
+  evidence_style: numbered_labels
+  output_language: match_user

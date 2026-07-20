@@ -455,6 +455,12 @@ class AnalysisService:
             "success_criteria": plan.intent.success_criteria,
             "metadata_confidence": plan.intent.metadata_confidence,
             "assumptions": plan.intent.assumptions,
+            "response_language": plan.intent.response_language,
+            "journey_diagnostic_contract": (
+                plan.intent.journey_diagnostic_contract.model_dump(mode="json")
+                if plan.intent.journey_diagnostic_contract
+                else None
+            ),
             "queries": [
                 {
                     "id": query.proposal_id,

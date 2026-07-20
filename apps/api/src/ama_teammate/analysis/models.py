@@ -5,7 +5,11 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ama_teammate.analysis_skills.models import SkillExecutionStep, SkillReference
+from ama_teammate.analysis_skills.models import (
+    JourneyDiagnosticContract,
+    SkillExecutionStep,
+    SkillReference,
+)
 from ama_teammate.learned_metrics.models import (
     ControlledMetricSpec,
     DetailCohortSpec,
@@ -68,6 +72,8 @@ class AnalysisIntent(BaseModel):
     detail_filters: list[MetricFilter] = Field(default_factory=list, max_length=12)
     detail_filter_groups: list[MetricFilterGroup] = Field(default_factory=list, max_length=8)
     detail_cohort: DetailCohortSpec | None = None
+    response_language: Literal["en", "zh-CN"] = "en"
+    journey_diagnostic_contract: JourneyDiagnosticContract | None = None
 
 
 class JoinPlan(BaseModel):
@@ -105,6 +111,12 @@ class AnalysisPlan(BaseModel):
             "metadata_confidence": self.intent.metadata_confidence,
             "assumptions": self.intent.assumptions,
             "queries": [query.approval_payload() for query in self.queries],
+            "response_language": self.intent.response_language,
+            "journey_diagnostic_contract": (
+                self.intent.journey_diagnostic_contract.model_dump(mode="json")
+                if self.intent.journey_diagnostic_contract
+                else None
+            ),
             "join_plan": self.join_plan.model_dump() if self.join_plan else None,
             "policy_version": self.policy_version,
             "metric_definition": self.metric_definition.model_dump(mode="json"),

@@ -57,6 +57,32 @@ class ApprovalSettings(StrictModel):
         return self
 
 
+class DiagnosticHierarchyLevel(StrictModel):
+    key: Literal["agent_stage", "symptom", "flow_step"]
+    label_en: str = Field(min_length=1, max_length=80)
+    label_zh: str = Field(min_length=1, max_length=80)
+
+
+class JourneyDiagnosticContract(StrictModel):
+    baseline_aggregation: Literal["daily_average"] = "daily_average"
+    rank_by: Literal["excess_failed_sessions", "failure_share_change"] = (
+        "excess_failed_sessions"
+    )
+    hierarchy: list[DiagnosticHierarchyLevel] = Field(min_length=1, max_length=3)
+    show_top_n: int = Field(default=5, ge=1, le=20)
+    small_sample_threshold: int = Field(default=5, ge=1, le=100)
+    drill_down_only_positive_parent: bool = True
+    evidence_style: Literal["numbered_labels"] = "numbered_labels"
+    output_language: Literal["match_user"] = "match_user"
+
+    @model_validator(mode="after")
+    def require_unique_hierarchy(self) -> JourneyDiagnosticContract:
+        keys = [item.key for item in self.hierarchy]
+        if len(keys) != len(set(keys)):
+            raise ValueError("Journey diagnostic hierarchy levels must be unique.")
+        return self
+
+
 class SkillMetadata(StrictModel):
     id: SkillId
     name: str = Field(min_length=3, max_length=120)
@@ -80,6 +106,7 @@ class SkillMetadata(StrictModel):
     deterministic_operations: list[str] = Field(default_factory=list, max_length=20)
     risk_level: SkillRiskLevel
     approval: ApprovalSettings
+    journey_diagnostic_contract: JourneyDiagnosticContract | None = None
 
     @model_validator(mode="after")
     def validate_dates_and_references(self) -> SkillMetadata:

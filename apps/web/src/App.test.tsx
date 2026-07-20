@@ -254,6 +254,8 @@ describe("Agent workspace", () => {
     expect(firstAnswer.compareDocumentPosition(result) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(result.compareDocumentPosition(secondQuestion) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getAllByText("Which date range?")).toHaveLength(1);
+    expect(screen.getByText("Evidence 1")).toBeInTheDocument();
+    expect(screen.queryByText("evidence-1")).not.toBeInTheDocument();
   });
   it("regenerates a plan from natural revision feedback", async () => {
     let messageStreamCount = 0;

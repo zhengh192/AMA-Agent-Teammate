@@ -142,6 +142,34 @@ class ChartBuilder:
                 ],
                 "layout": self._layout(intent),
             }
+        if intent.analysis_type == AnalysisKind.JOURNEY_DIAGNOSTIC and chart_type == ChartKind.BAR:
+            hierarchy = computation.summary.get("hierarchy", [])
+            stage_rows = hierarchy[0].get("display_rows", []) if hierarchy else []
+            chinese = computation.summary.get("response_language") == "zh-CN"
+            layout = self._layout(intent)
+            layout["title"] = {
+                "text": "Agent 阶段离开量：异常日 vs 基线日均"
+                if chinese
+                else "Agent-stage exits: incident vs daily baseline"
+            }
+            layout["barmode"] = "group"
+            return {
+                "data": [
+                    {
+                        "type": "bar",
+                        "name": "基线日均" if chinese else "Daily baseline",
+                        "x": [row.get("value") for row in stage_rows],
+                        "y": [row.get("baseline_average_daily_count") for row in stage_rows],
+                    },
+                    {
+                        "type": "bar",
+                        "name": "异常期日均" if chinese else "Incident daily average",
+                        "x": [row.get("value") for row in stage_rows],
+                        "y": [row.get("incident_average_daily_count") for row in stage_rows],
+                    },
+                ],
+                "layout": layout,
+            }
         if chart_type in {ChartKind.LINE, ChartKind.BAR}:
             trace_type = "scatter" if chart_type == ChartKind.LINE else "bar"
             y_column = "revenue" if "revenue" in dataset.columns else "value"

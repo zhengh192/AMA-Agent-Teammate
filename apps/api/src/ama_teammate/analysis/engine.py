@@ -23,9 +23,9 @@ class ControlledAnalysisEngine:
     def analyze(
         self, intent: AnalysisIntent, dataset: Dataset, join_quality: JoinQuality | None
     ) -> AnalysisComputation:
-        quality_evidence = self._quality_evidence(dataset)
+        quality_evidence = self._quality_evidence(dataset, intent.response_language)
         if intent.analysis_type == AnalysisKind.JOURNEY_DIAGNOSTIC:
-            summary, evidence, conclusions = self._journey_diagnostic(dataset)
+            summary, evidence, conclusions = self._journey_diagnostic(dataset, intent)
         elif intent.analysis_type == AnalysisKind.DETAIL:
             summary, evidence, conclusions = self._detail(dataset, intent)
         elif intent.analysis_type == AnalysisKind.CONTRIBUTION:
@@ -101,46 +101,163 @@ class ControlledAnalysisEngine:
         return AnalysisComputation(summary=summary, evidence=evidence, conclusions=conclusions)
 
     def _journey_diagnostic(
-        self, dataset: Dataset
+        self, dataset: Dataset, intent: AnalysisIntent
     ) -> tuple[dict[str, Any], list[EvidenceRecord], list[Conclusion]]:
-        counts: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+        contract = intent.journey_diagnostic_contract
+        if contract is None:
+            raise ValueError("Journey diagnostic Skill contract is missing.")
+        hierarchy = [item.key for item in contract.hierarchy]
+        labels = {
+            item.key: (
+                item.label_zh if intent.response_language == "zh-CN" else item.label_en
+            )
+            for item in contract.hierarchy
+        }
+        daily: dict[
+            str,
+            dict[str, dict[tuple[str, tuple[str, ...]], float]],
+        ] = defaultdict(lambda: defaultdict(lambda: defaultdict(float)))
         for row in dataset.rows:
             window = str(row.get("comparison_window", "unknown"))
-            stage = str(row.get("exit_stage", "UNKNOWN_STAGE"))
-            counts[window][stage] += self._number(row.get("value"))
+            comparison_date = str(row.get("comparison_date", "unknown"))
+            outcome = str(row.get("outcome", "FAILED"))
+            path = tuple(
+                str(row.get(key) or f"UNKNOWN_{key.upper()}") for key in hierarchy
+            )
+            daily[window][comparison_date][(outcome, path)] += self._number(row.get("value"))
 
-        def window_summary(window: str) -> dict[str, float | None]:
-            stage_counts = counts.get(window, {})
-            total = sum(stage_counts.values())
-            successful = stage_counts.get("CASE_CREATED", 0.0)
-            failed = total - successful
+        def window_summary(window: str) -> dict[str, Any]:
+            dates = sorted(daily.get(window, {}))
+            daily_totals: list[float] = []
+            daily_successes: list[float] = []
+            daily_failures: list[float] = []
+            daily_rates: list[float] = []
+            for comparison_date in dates:
+                rows = daily[window][comparison_date]
+                successful = sum(
+                    value for (outcome, _), value in rows.items() if outcome == "CASE_CREATED"
+                )
+                failed = sum(value for (outcome, _), value in rows.items() if outcome != "CASE_CREATED")
+                total = successful + failed
+                daily_totals.append(total)
+                daily_successes.append(successful)
+                daily_failures.append(failed)
+                if total:
+                    daily_rates.append(successful / total)
             return {
-                "total": total,
-                "successful": successful,
-                "failed": failed,
-                "success_rate": successful / total if total else None,
+                "dates": dates,
+                "days": len(dates),
+                "total": sum(daily_totals),
+                "successful": sum(daily_successes),
+                "failed": sum(daily_failures),
+                "average_daily_total": fmean(daily_totals) if daily_totals else 0.0,
+                "average_daily_successful": (
+                    fmean(daily_successes) if daily_successes else 0.0
+                ),
+                "average_daily_failed": fmean(daily_failures) if daily_failures else 0.0,
+                "success_rate": fmean(daily_rates) if daily_rates else None,
             }
 
         baseline = window_summary("baseline")
         incident = window_summary("incident")
-        baseline_failed = float(baseline["failed"] or 0.0)
-        incident_failed = float(incident["failed"] or 0.0)
-        failure_stages = (set(counts.get("baseline", {})) | set(counts.get("incident", {}))) - {
-            "CASE_CREATED"
-        }
-        stage_shifts: dict[str, dict[str, float]] = {}
-        for stage in sorted(failure_stages):
-            baseline_count = counts.get("baseline", {}).get(stage, 0.0)
-            incident_count = counts.get("incident", {}).get(stage, 0.0)
-            baseline_share = baseline_count / baseline_failed if baseline_failed else 0.0
-            incident_share = incident_count / incident_failed if incident_failed else 0.0
-            stage_shifts[stage] = {
-                "baseline_count": baseline_count,
-                "incident_count": incident_count,
-                "baseline_failure_share": baseline_share,
-                "incident_failure_share": incident_share,
-                "share_change": incident_share - baseline_share,
-            }
+
+        def breakdown(level_index: int, parents: tuple[str, ...]) -> list[dict[str, Any]]:
+            values: set[str] = set()
+            for window_rows in daily.values():
+                for day_rows in window_rows.values():
+                    for (outcome, path), _ in day_rows.items():
+                        if outcome == "CASE_CREATED" or path[:level_index] != parents:
+                            continue
+                        values.add(path[level_index])
+
+            rows: list[dict[str, Any]] = []
+            for value in values:
+                metrics: dict[str, float] = {}
+                for window in ("baseline", "incident"):
+                    counts: list[float] = []
+                    shares: list[float] = []
+                    for comparison_date in sorted(daily.get(window, {})):
+                        count = 0.0
+                        denominator = 0.0
+                        for (outcome, path), amount in daily[window][comparison_date].items():
+                            if outcome == "CASE_CREATED" or path[:level_index] != parents:
+                                continue
+                            denominator += amount
+                            if path[level_index] == value:
+                                count += amount
+                        counts.append(count)
+                        shares.append(count / denominator if denominator else 0.0)
+                    metrics[f"{window}_average_daily_count"] = (
+                        fmean(counts) if counts else 0.0
+                    )
+                    metrics[f"{window}_average_daily_share"] = (
+                        fmean(shares) if shares else 0.0
+                    )
+                rows.append(
+                    {
+                        "value": value,
+                        "baseline_average_daily_count": metrics[
+                            "baseline_average_daily_count"
+                        ],
+                        "incident_average_daily_count": metrics[
+                            "incident_average_daily_count"
+                        ],
+                        "excess_failed_sessions": (
+                            metrics["incident_average_daily_count"]
+                            - metrics["baseline_average_daily_count"]
+                        ),
+                        "baseline_failure_share": metrics[
+                            "baseline_average_daily_share"
+                        ],
+                        "incident_failure_share": metrics[
+                            "incident_average_daily_share"
+                        ],
+                        "failure_share_change": (
+                            metrics["incident_average_daily_share"]
+                            - metrics["baseline_average_daily_share"]
+                        ),
+                    }
+                )
+            rank_by = contract.rank_by
+            return sorted(
+                rows,
+                key=lambda item: (
+                    float(item[rank_by]),
+                    float(item["incident_average_daily_count"]),
+                    str(item["value"]),
+                ),
+                reverse=True,
+            )
+
+        levels: list[dict[str, Any]] = []
+        parent_values: list[str] = []
+        for level_index, key in enumerate(hierarchy):
+            rows = breakdown(level_index, tuple(parent_values))
+            selected: str | None = None
+            if rows:
+                candidate = rows[0]
+                rank_value = float(candidate[contract.rank_by])
+                incident_count = float(candidate["incident_average_daily_count"])
+                if (
+                    not contract.drill_down_only_positive_parent or rank_value > 0
+                ) and incident_count >= contract.small_sample_threshold:
+                    selected = str(candidate["value"])
+            levels.append(
+                {
+                    "key": key,
+                    "label": labels[key],
+                    "parent": {
+                        hierarchy[index]: value
+                        for index, value in enumerate(parent_values)
+                    },
+                    "rows": rows,
+                    "display_rows": rows[: contract.show_top_n],
+                    "selected": selected,
+                }
+            )
+            if selected is None:
+                break
+            parent_values.append(selected)
 
         baseline_rate = baseline["success_rate"]
         incident_rate = incident["success_rate"]
@@ -149,19 +266,31 @@ class ControlledAnalysisEngine:
             if baseline_rate is not None and incident_rate is not None
             else None
         )
+        first_level_rows = levels[0]["rows"] if levels else []
         strongest_stage = (
-            max(stage_shifts, key=lambda stage: stage_shifts[stage]["share_change"])
-            if stage_shifts
-            else None
+            str(levels[0]["selected"]) if levels and levels[0]["selected"] is not None else None
         )
+        stage_shifts = {
+            str(row["value"]): {
+                "baseline_count": row["baseline_average_daily_count"],
+                "incident_count": row["incident_average_daily_count"],
+                "baseline_failure_share": row["baseline_failure_share"],
+                "incident_failure_share": row["incident_failure_share"],
+                "share_change": row["failure_share_change"],
+                "excess_failed_sessions": row["excess_failed_sessions"],
+            }
+            for row in first_level_rows
+        }
+        chinese = intent.response_language == "zh-CN"
         pattern_evidence = EvidenceRecord(
             id=new_id(),
-            title="Case journey incident comparison",
+            title="建单成功率与日均基线对比" if chinese else "Case success versus daily baseline",
             dataset_ids=[dataset.id],
             query_proposal_ids=dataset.query_proposal_ids,
             calculation=(
-                "Compare successful and failed eligible sessions across baseline and incident "
-                f"windows using {self.version}"
+                "按自然日计算建单成功率，并将异常期与基线期每日结果的平均值比较。"
+                if chinese
+                else "Calculate daily case success rates and compare the incident with the mean daily baseline."
             ),
             support={
                 "baseline": baseline,
@@ -171,73 +300,155 @@ class ControlledAnalysisEngine:
             epistemic_label=EpistemicLabel.CONFIRMED.value,
             confidence=0.95,
             limitations=[
-                "Eligibility is a working cohort: visit intent_type='hardware' plus pd_triggered='yes'.",
-                "The baseline is a short operational comparison, not a seasonal control.",
+                (
+                    "当前基线是紧邻异常日前的短期日均，不是季节性对照。"
+                    if chinese
+                    else "The baseline is a short adjacent daily average, not a seasonal control."
+                )
             ],
         )
-        stage_evidence = EvidenceRecord(
-            id=new_id(),
-            title="Failed-session last relevant stage distribution",
-            dataset_ids=[dataset.id],
-            query_proposal_ids=dataset.query_proposal_ids,
-            calculation=(
-                "For failed sessions, compare the last hardware or flow-related turn by "
-                "failure-share change"
-            ),
-            support={
-                "stage_shifts": stage_shifts,
-                "largest_share_increase_stage": strongest_stage,
-            },
-            epistemic_label=EpistemicLabel.CONFIRMED.value,
-            confidence=0.85,
-            limitations=[
-                "The last relevant recorded turn may not equal the user's subjective exit point.",
-                "A stage shift localizes the path but does not identify a system root cause.",
-            ],
-        )
+        hierarchy_evidence: list[EvidenceRecord] = []
+        for level in levels:
+            hierarchy_evidence.append(
+                EvidenceRecord(
+                    id=new_id(),
+                    title=(
+                        f"{level['label']}离开分布与基线增量"
+                        if chinese
+                        else f"{level['label']} exit distribution versus baseline"
+                    ),
+                    dataset_ids=[dataset.id],
+                    query_proposal_ids=dataset.query_proposal_ids,
+                    calculation=(
+                        "比较失败 session 在该层级的异常期日均数量、基线日均数量、增量和条件占比变化。"
+                        if chinese
+                        else (
+                            "Compare incident daily count, baseline daily count, excess failures, "
+                            "and conditional share change at this hierarchy level."
+                        )
+                    ),
+                    support=level,
+                    epistemic_label=EpistemicLabel.CONFIRMED.value,
+                    confidence=0.9,
+                    limitations=[
+                        (
+                            "最后记录的阶段用于定位离开位置，但不等同于已经证明的系统根因。"
+                            if chinese
+                            else (
+                                "The last recorded stage localizes the exit point but does not "
+                                "prove a system root cause."
+                            )
+                        )
+                    ],
+                )
+            )
+
+        def count_text(value: float) -> str:
+            return f"{value:.1f}".rstrip("0").rstrip(".")
+
         conclusions: list[Conclusion] = []
         if baseline_rate is not None and incident_rate is not None:
+            if chinese:
+                incident_date = "、".join(incident["dates"]) or "异常期"
+                movement = (
+                    f"{incident_date} 建单成功率为 {float(incident_rate):.1%}，"
+                    f"基线日均为 {float(baseline_rate):.1%}，"
+                    f"变化 {float(rate_change or 0.0) * 100:+.1f} 个百分点。"
+                )
+            else:
+                movement = (
+                    f"Case success was {float(incident_rate):.1%} in the incident window "
+                    f"versus a {float(baseline_rate):.1%} mean daily baseline "
+                    f"({float(rate_change or 0.0) * 100:+.1f} percentage points)."
+                )
             conclusions.append(
                 Conclusion(
-                    text=(
-                        f"Case success was {float(incident_rate):.1%} in the incident window "
-                        f"versus {float(baseline_rate):.1%} in baseline "
-                        f"({float(rate_change or 0.0):+.1%} percentage-point change)."
-                    ),
+                    text=movement,
                     epistemic_label=EpistemicLabel.CONFIRMED.value,
                     evidence_ids=[pattern_evidence.id],
                 )
             )
-        if strongest_stage is not None:
+
+        for index, level in enumerate(levels):
+            rows = level["display_rows"]
+            if not rows:
+                continue
+            parts = [
+                (
+                    f"{row['value']}：异常期日均 {count_text(float(row['incident_average_daily_count']))}，"
+                    f"基线日均 {count_text(float(row['baseline_average_daily_count']))}，"
+                    f"多 {count_text(float(row['excess_failed_sessions']))} 个"
+                    if chinese
+                    else (
+                        f"{row['value']}: incident {count_text(float(row['incident_average_daily_count']))}, "
+                        f"baseline {count_text(float(row['baseline_average_daily_count']))}, "
+                        f"excess {count_text(float(row['excess_failed_sessions']))}"
+                    )
+                )
+                for row in rows[:3]
+            ]
+            if chinese:
+                if index == 0:
+                    text = "先看全部 Agent 阶段，增量最大的几项是：" + "；".join(parts) + "。"
+                else:
+                    parent = " / ".join(str(value) for value in level["parent"].values())
+                    text = (
+                        f"只在 {parent} 内继续下钻 {level['label']}："
+                        + "；".join(parts)
+                        + "。"
+                    )
+            else:
+                parent = " / ".join(str(value) for value in level["parent"].values())
+                prefix = (
+                    "Across all Agent stages, the largest increases were: "
+                    if index == 0
+                    else f"Within {parent}, the {level['label']} drill-down was: "
+                )
+                text = prefix + "; ".join(parts) + "."
             conclusions.append(
                 Conclusion(
-                    text=(
-                        f"{strongest_stage} had the largest observed increase in failed-session "
-                        f"share ({stage_shifts[strongest_stage]['share_change']:+.1%})."
-                    ),
+                    text=text,
                     epistemic_label=EpistemicLabel.CONFIRMED.value,
-                    evidence_ids=[stage_evidence.id],
+                    evidence_ids=[hierarchy_evidence[index].id],
                 )
             )
+
         conclusions.append(
             Conclusion(
                 text=(
-                    "The recorded stage distribution does not by itself establish whether "
-                    "PD/KA availability, ticket creation, or user behavior caused the change."
+                    "这些分布可以确认异常集中在哪个 Agent 阶段、症状和步骤，但仅凭时序与集中度还不能确认 PD/KA、建单接口或用户行为就是根因。"
+                    if chinese
+                    else (
+                        "These distributions locate the stage, symptom, and step where the "
+                        "increase concentrated, but do not by themselves prove whether PD/KA, "
+                        "ticket creation, or user behavior caused it."
+                    )
                 ),
                 epistemic_label=EpistemicLabel.UNKNOWN.value,
-                evidence_ids=[pattern_evidence.id, stage_evidence.id],
+                evidence_ids=[
+                    pattern_evidence.id,
+                    *[item.id for item in hierarchy_evidence],
+                ][:10],
             )
         )
         return (
             {
+                "response_language": intent.response_language,
                 "windows": {"baseline": baseline, "incident": incident},
                 "success_rate_change": rate_change,
+                "hierarchy": levels,
                 "stage_shifts": stage_shifts,
                 "largest_share_increase_stage": strongest_stage,
-                "next_layer": "bounded_response_theme_review",
+                "next_layer": (
+                    "bounded_response_theme_review"
+                    if len(levels) == len(hierarchy)
+                    and levels
+                    and levels[-1]["selected"] is not None
+                    else None
+                ),
+                "skill_contract": contract.model_dump(mode="json"),
             },
-            [pattern_evidence, stage_evidence],
+            [pattern_evidence, *hierarchy_evidence],
             conclusions,
         )
 
@@ -308,13 +519,20 @@ class ControlledAnalysisEngine:
         )
         return summary, [evidence], [conclusion]
 
-    def _quality_evidence(self, dataset: Dataset) -> EvidenceRecord:
+    def _quality_evidence(
+        self, dataset: Dataset, response_language: str = "en"
+    ) -> EvidenceRecord:
+        chinese = response_language == "zh-CN"
         return EvidenceRecord(
             id=new_id(),
-            title="Dataset completeness and duplication",
+            title="数据完整性与重复检查" if chinese else "Dataset completeness and duplication",
             dataset_ids=[dataset.id],
             query_proposal_ids=dataset.query_proposal_ids,
-            calculation="missing counts and exact duplicate rows",
+            calculation=(
+                "统计缺失值和完全重复行"
+                if chinese
+                else "missing counts and exact duplicate rows"
+            ),
             support=dataset.quality.model_dump(),
             epistemic_label=EpistemicLabel.CONFIRMED.value,
             confidence=1.0,

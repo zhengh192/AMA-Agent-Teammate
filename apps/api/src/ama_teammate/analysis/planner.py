@@ -184,6 +184,33 @@ class AnalysisPlanner:
             intent = intent.model_copy(
                 update={"start_date": "2026-06-01", "end_date": "2026-08-01"}
             )
+        response_language = (
+            "zh-CN" if any("\u4e00" <= character <= "\u9fff" for character in question) else "en"
+        )
+        intent = intent.model_copy(update={"response_language": response_language})
+        skill_plan = (
+            self.skill_registry.build_execution_plan(intent.analysis_type, question)
+            if self.skill_registry
+            else []
+        )
+        if intent.analysis_type == AnalysisKind.JOURNEY_DIAGNOSTIC:
+            if self.skill_registry is None:
+                raise AnalysisDefinitionNeedsClarification(
+                    "The active case journey diagnostic Skill is unavailable."
+                )
+            contract = self.skill_registry.get(
+                "case_journey_diagnostics"
+            ).metadata.journey_diagnostic_contract
+            if contract is None:
+                raise AnalysisDefinitionNeedsClarification(
+                    "The active case journey diagnostic Skill has no runtime contract."
+                )
+            intent = intent.model_copy(
+                update={
+                    "journey_diagnostic_contract": contract,
+                    "dimensions": ["comparison_window", *[item.key for item in contract.hierarchy]],
+                }
+            )
         for source_id in intent.source_ids:
             self.registry.config(source_id)
         business_rules = self.semantic_registry.active_business_rules_for_connectors(
@@ -281,11 +308,6 @@ class AnalysisPlanner:
             )
             relationships = metadata.relationships
         proposals, join_plan = self._resolve_queries(intent)
-        skill_plan = (
-            self.skill_registry.build_execution_plan(intent.analysis_type, question)
-            if self.skill_registry
-            else []
-        )
         validated = [
             self.gateway.validate(proposal, self.registry.config(proposal.source_id))
             for proposal in proposals
@@ -834,13 +856,48 @@ class AnalysisPlanner:
             "parameters": parameters,
             "max_rows": min(
                 source.max_rows,
-                intent.detail_limit if intent.analysis_type == AnalysisKind.DETAIL else 200,
+                intent.detail_limit
+                if intent.analysis_type == AnalysisKind.DETAIL
+                else (500 if intent.analysis_type == AnalysisKind.JOURNEY_DIAGNOSTIC else 200),
             ),
             "max_result_bytes": min(source.max_result_bytes, 262_144),
             "timeout_seconds": min(source.timeout_seconds, 10.0),
         }
 
         if intent.analysis_type == AnalysisKind.JOURNEY_DIAGNOSTIC:
+            contract = intent.journey_diagnostic_contract
+            if contract is None:
+                raise AnalysisDefinitionNeedsClarification(
+                    "The case journey diagnostic Skill contract is missing from the plan."
+                )
+            turn_columns = source.tables["turn_log"].column_names
+            dimension_expressions = {
+                "agent_stage": (
+                    "CASE WHEN JSON_VALID(t.bot_thinking) THEN "
+                    "NULLIF(JSON_UNQUOTE(JSON_EXTRACT(t.bot_thinking, '$[last].agent_type')), '') "
+                    "ELSE NULL END"
+                    if "bot_thinking" in turn_columns
+                    else "NULL"
+                ),
+                "symptom": (
+                    "NULLIF(CAST(t.symptom AS CHAR), '')"
+                    if "symptom" in turn_columns
+                    else "NULL"
+                ),
+                "flow_step": (
+                    "NULLIF(CAST(t.flow_step AS CHAR), '')"
+                    if "flow_step" in turn_columns
+                    else "NULL"
+                ),
+            }
+            hierarchy_keys = [item.key for item in contract.hierarchy]
+            dimension_select = ",\n    ".join(
+                f"{dimension_expressions[key]} AS {key}" for key in hierarchy_keys
+            )
+            dimension_columns = ", ".join(hierarchy_keys)
+            unknown_dimensions = ",\n    ".join(
+                f"COALESCE(lt.{key}, 'UNKNOWN_{key.upper()}') AS {key}" for key in hierarchy_keys
+            )
             incident_start = (date.fromisoformat(intent.end_date) - timedelta(days=1)).isoformat()
             parameters["incident_start"] = incident_start
             sql = f"""
@@ -857,49 +914,40 @@ WITH eligible_visits AS (
     AND LOWER(COALESCE(intent_type, '')) = 'hardware'
     AND LOWER(COALESCE(pd_triggered, '')) = 'yes'
 ),
-relevant_turns AS (
+last_turns AS (
   SELECT
     t.session_id,
-    t.flow_id,
-    t.flow_step,
+    {dimension_select},
     ROW_NUMBER() OVER (
       PARTITION BY t.session_id
       ORDER BY t.start_time DESC, t.turn_id DESC
     ) AS rn
   FROM turn_log t
   JOIN eligible_visits v ON v.session_id = t.session_id
-  WHERE
-    LOWER(COALESCE(t.intent_type, '')) = 'hardware'
-    OR t.flow_id IS NOT NULL
-    OR t.flow_step IS NOT NULL
 ),
 cohort AS (
   SELECT
+    v.session_id,
+    CAST(v.start_time AS DATE) AS comparison_date,
     CASE
       WHEN v.start_time >= :incident_start THEN 'incident'
       ELSE 'baseline'
     END AS comparison_window,
-    CASE
-      WHEN v.eticket_case_number IS NOT NULL OR v.msd_case_number IS NOT NULL
-        THEN 'CASE_CREATED'
-      WHEN NULLIF(rt.flow_step, '') IS NOT NULL
-        THEN CONCAT('KA_FLOW_', rt.flow_step)
-      WHEN NULLIF(rt.flow_id, '') IS NOT NULL
-        THEN 'KA_FLOW_NO_STEP'
-      ELSE 'HARDWARE_BEFORE_KA_FLOW'
-    END AS exit_stage
+    CASE WHEN v.eticket_case_number IS NOT NULL OR v.msd_case_number IS NOT NULL
+      THEN 'CASE_CREATED' ELSE 'FAILED' END AS outcome,
+    {unknown_dimensions}
   FROM eligible_visits v
-  LEFT JOIN relevant_turns rt ON rt.session_id = v.session_id AND rt.rn = 1
+  LEFT JOIN last_turns lt ON lt.session_id = v.session_id AND lt.rn = 1
 )
-SELECT comparison_window, exit_stage, COUNT(exit_stage) AS value
+SELECT comparison_date, comparison_window, outcome, {dimension_columns}, COUNT(session_id) AS value
 FROM cohort
-GROUP BY comparison_window, exit_stage
-ORDER BY comparison_window, value DESC
+GROUP BY comparison_date, comparison_window, outcome, {dimension_columns}
+ORDER BY comparison_date, outcome, value DESC
 """
             return QueryProposal(
                 purpose=(
-                    "Compare the working case-eligible cohort before and during the incident, "
-                    "including successful cases and the last relevant stage of failed sessions."
+                    "Compare daily case outcomes, quantify every failed-session Agent stage, "
+                    "then preserve symptom and step for Skill-driven progressive drill-down."
                 ),
                 sql=sql,
                 **common,

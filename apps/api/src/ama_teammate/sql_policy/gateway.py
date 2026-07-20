@@ -10,6 +10,7 @@ from ama_teammate.sql_policy.aggregate_only import aggregate_only_violations
 from ama_teammate.sql_policy.models import QueryProposal, SQLPolicyViolation, ValidatedQuery
 
 POLICY_VERSION = "sql-readonly-v1"
+_ALLOWED_ANONYMOUS_FUNCTIONS = frozenset({"JSON_UNQUOTE", "JSON_VALID"})
 
 
 class SQLSafetyGateway:
@@ -66,13 +67,25 @@ class SQLSafetyGateway:
             exp.If,
             exp.And,
             exp.Or,
+            exp.JSONExtract,
         )
-        if any(
-            not isinstance(function, allowed_function_types)
-            for function in statement.find_all(exp.Func)
-        ):
+        disallowed_function_types = sorted(
+            {
+                type(function).__name__
+                for function in statement.find_all(exp.Func)
+                if not isinstance(function, allowed_function_types)
+                and not (
+                    isinstance(function, exp.Anonymous)
+                    and function.name.upper() in _ALLOWED_ANONYMOUS_FUNCTIONS
+                )
+            }
+        )
+        if disallowed_function_types:
             raise SQLPolicyViolation(
-                "function_not_allowed", "SQL references a function outside the read-only allowlist."
+                "function_not_allowed",
+                "SQL references function types outside the read-only allowlist: "
+                + ", ".join(disallowed_function_types)
+                + ".",
             )
 
         column_names = {column.name.lower() for column in statement.find_all(exp.Column)}

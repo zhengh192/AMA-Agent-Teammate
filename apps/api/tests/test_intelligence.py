@@ -179,10 +179,16 @@ def test_analysis_narrative_renders_as_natural_conversation() -> None:
     narrative = AnalysisNarrative(
         executive_summary="我已经算完了，结果如下。",
         confirmed_findings=[
-            NarrativeClaim(text="接受降级的比例是 12%。", evidence_ids=["evidence-1"])
+            NarrativeClaim(
+                text="接受降级的比例是 12%。",
+                evidence_ids=["evidence-1"],
+            )
         ],
         inferred_findings=[
-            NarrativeClaim(text="渠道差异可能值得继续看。", evidence_ids=["evidence-2"])
+            NarrativeClaim(
+                text="渠道差异可能值得继续看。",
+                evidence_ids=["evidence-2"],
+            )
         ],
         unknowns=["当前没有活动时区定义。"],
         next_actions=["按渠道拆开比较。"],
@@ -192,12 +198,27 @@ def test_analysis_narrative_renders_as_natural_conversation() -> None:
     rendered = PhaseTwoChatService._render_analysis_narrative(narrative)
 
     assert rendered.startswith("我已经算完了")
-    assert "（已确认，依据：evidence-1）" in rendered
-    assert "属于推断，不代表因果关系" in rendered
+    assert "（依据1）" in rendered
+    assert "推断，依据2；不代表因果关系" in rendered
+    assert "evidence-1" not in rendered
     assert "Summary:" not in rendered
     assert "Confirmed:" not in rendered
     assert "Next actions:" not in rendered
     assert "\n\n" in rendered
+
+
+def test_analysis_narrative_rejects_mixed_language_for_chinese_question() -> None:
+    english = AnalysisNarrative(executive_summary="The result is ready with evidence.")
+    chinese = AnalysisNarrative(
+        executive_summary="结果已经准备好，下面按阶段说明。"
+    )
+
+    assert not PhaseTwoChatService._narrative_matches_question(
+        english, "为什么7月18日这么低"
+    )
+    assert PhaseTwoChatService._narrative_matches_question(
+        chinese, "为什么7月18日这么低"
+    )
 
 
 def test_analysis_narrative_fallback_bounds_real_world_lists() -> None:

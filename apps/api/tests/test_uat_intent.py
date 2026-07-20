@@ -136,7 +136,7 @@ def test_case_journey_diagnostic_uses_three_day_baseline() -> None:
     assert intent.analysis_type.value == "journey_diagnostic"
     assert intent.start_date == f"{date.today().year}-07-02"
     assert intent.end_date == f"{date.today().year}-07-06"
-    assert intent.dimensions == ["comparison_window", "exit_stage"]
+    assert intent.dimensions == ["comparison_window", "agent_stage", "symptom", "flow_step"]
     assert intent.chart_type.value == "bar"
 
 

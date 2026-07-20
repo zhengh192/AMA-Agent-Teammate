@@ -143,7 +143,7 @@ def infer_uat_intent(question: str, context: str = "") -> AnalysisIntent | None:
         return AnalysisIntent(
             analysis_type=AnalysisKind.JOURNEY_DIAGNOSTIC,
             metric="Case Journey Stage Diagnostic",
-            dimensions=["comparison_window", "exit_stage"],
+            dimensions=["comparison_window", "agent_stage", "symptom", "flow_step"],
             source_ids=["super_agent_uat"],
             start_date=start_date.isoformat(),
             end_date=end_date.isoformat(),
@@ -156,7 +156,7 @@ def infer_uat_intent(question: str, context: str = "") -> AnalysisIntent | None:
             assumptions=[
                 "The working eligible cohort requires visit_log.intent_type='hardware' and pd_triggered='yes'.",
                 "A session is successful when eticket_case_number or msd_case_number is present.",
-                "Failure stage uses the last hardware or flow-related turn, not the physical last turn.",
+                "Failure hierarchy uses the physical last turn: bot_thinking agent_type, then symptom, then flow_step.",
                 "Stage concentration localizes the failure path but does not prove the system root cause.",
                 *time_assumptions,
             ],
