@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     ama_conversation_history_max_characters: int = Field(default=8_000, ge=0, le=30_000)
     ama_model_assisted_routing: bool = True
     ama_analysis_synthesis: bool = True
+    ama_analysis_synthesis_timeout_seconds: float = Field(default=8.0, gt=0, le=60)
     ama_knowledge_synthesis_timeout_seconds: float = Field(default=12.0, gt=0, le=60)
     ama_development_user_id: str = "local-dev-user"
     ama_development_user_name: str = "Local Developer"

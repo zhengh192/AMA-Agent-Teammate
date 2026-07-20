@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
 from typing import Any
@@ -460,7 +461,7 @@ class PhaseTwoChatService(ChatService):
             "skill_references": [item.model_dump(mode="json") for item in result.skill_references],
         }
         try:
-            response = await self.providers.provider.generate_structured(
+            synthesis = self.providers.provider.generate_structured(
                 [
                     ProviderMessage(role="developer", content=ANALYSIS_SYNTHESIS_INSTRUCTIONS),
                     ProviderMessage(
@@ -470,6 +471,9 @@ class PhaseTwoChatService(ChatService):
                 ],
                 self.providers.analyst,
                 StructuredProviderRequest(name="analysis_narrative", schema=AnalysisNarrative),
+            )
+            response = await asyncio.wait_for(
+                synthesis, timeout=self.settings.ama_analysis_synthesis_timeout_seconds
             )
             if not isinstance(response, AnalysisNarrative):
                 raise TypeError("Provider returned an invalid analysis narrative")
@@ -525,15 +529,15 @@ class PhaseTwoChatService(ChatService):
         return AnalysisNarrative(
             executive_summary=executive_summary
             or "The approved analysis completed with evidence-linked results.",
-            confirmed_findings=confirmed,
-            inferred_findings=inferred,
-            unknowns=list(result.unknowns),
+            confirmed_findings=confirmed[:8],
+            inferred_findings=inferred[:8],
+            unknowns=list(result.unknowns)[:8],
             next_actions=(
                 ["如果需要，可以继续按天或其他字段拆分。"]
                 if chinese and not result.unknowns
-                else list(result.recommendations)
+                else list(result.recommendations)[:6]
             ),
-            limitations=list(result.limitations),
+            limitations=list(result.limitations)[:8],
         )
 
     @staticmethod

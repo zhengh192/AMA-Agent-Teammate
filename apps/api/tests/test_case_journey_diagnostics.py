@@ -15,6 +15,7 @@ from ama_teammate.analysis.models import (
 )
 from ama_teammate.analysis_skills.models import SkillStatus
 from ama_teammate.analysis_skills.registry import AnalysisSkillRegistry
+from ama_teammate.evidence.validator import EvidenceValidator
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -74,6 +75,7 @@ def test_journey_diagnostic_compares_stage_distribution_without_claiming_cause()
     assert computation.summary["largest_share_increase_stage"] == "KA_FLOW_C1"
     assert computation.summary["next_layer"] == "bounded_response_theme_review"
     assert any(item.epistemic_label == "Unknown" for item in computation.conclusions)
+    EvidenceValidator().validate(computation)
 
 
 def test_journey_diagnostic_skill_is_active_and_in_execution_plan() -> None:

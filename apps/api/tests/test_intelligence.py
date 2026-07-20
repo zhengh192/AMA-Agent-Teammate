@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from types import SimpleNamespace
 
@@ -199,6 +200,52 @@ def test_analysis_narrative_renders_as_natural_conversation() -> None:
     assert "\n\n" in rendered
 
 
+def test_analysis_narrative_fallback_bounds_real_world_lists() -> None:
+    result = SimpleNamespace(
+        computation=SimpleNamespace(conclusions=[], summary={}),
+        executive_summary="Completed.",
+        unknowns=[f"unknown-{index}" for index in range(10)],
+        recommendations=[f"action-{index}" for index in range(10)],
+        limitations=[f"limitation-{index}" for index in range(11)],
+    )
+
+    narrative = PhaseTwoChatService._fallback_analysis_narrative(result)
+
+    assert len(narrative.unknowns) == 8
+    assert len(narrative.next_actions) == 6
+    assert len(narrative.limitations) == 8
+
+
+@pytest.mark.asyncio
+async def test_analysis_narrative_timeout_uses_bounded_fallback() -> None:
+    class SlowProvider:
+        async def generate_structured(self, *_args: object, **_kwargs: object) -> object:
+            await asyncio.sleep(1)
+            raise AssertionError("The slow provider should have been cancelled.")
+
+    service = object.__new__(PhaseTwoChatService)
+    service.settings = SimpleNamespace(
+        ama_analysis_synthesis=True,
+        ama_analysis_synthesis_timeout_seconds=0.01,
+    )
+    service.providers = SimpleNamespace(provider=SlowProvider(), analyst=SimpleNamespace())
+    result = SimpleNamespace(
+        evidence=[],
+        computation=SimpleNamespace(conclusions=[], summary={}, evidence=[]),
+        executive_summary="Completed.",
+        unknowns=[],
+        recommendations=[],
+        limitations=[],
+        datasets=[],
+        join_quality=None,
+        metric_references=[],
+        skill_references=[],
+    )
+
+    narrative, synthesized = await service._create_analysis_narrative(result, "Why was it low?")
+
+    assert synthesized is False
+    assert narrative.executive_summary == "Completed."
 def test_analysis_narrative_rejects_unknown_evidence_ids() -> None:
     narrative = AnalysisNarrative(
         executive_summary="Summary",

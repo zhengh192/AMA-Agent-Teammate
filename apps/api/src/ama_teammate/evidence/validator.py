@@ -21,8 +21,19 @@ class EvidenceValidator:
                 raise EvidenceValidationError("Conclusion has an invalid epistemic label.")
             lower = conclusion.text.lower()
             causal_terms = ("caused", "causes", "because of", "drives")
+            causal_caveats = (
+                "does not establish",
+                "does not by itself establish",
+                "does not prove",
+                "cannot establish",
+                "cannot prove",
+                "not a causal",
+                "no causal",
+                "causation remains unknown",
+            )
             if (
                 any(term in lower for term in causal_terms)
+                and not any(caveat in lower for caveat in causal_caveats)
                 and conclusion.epistemic_label != EpistemicLabel.CONFIRMED.value
             ):
                 raise EvidenceValidationError("Unsupported causal language is blocked.")

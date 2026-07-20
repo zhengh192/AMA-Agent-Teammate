@@ -273,6 +273,9 @@ export default function PhaseTwoApp() {
       setIsThinking(false);
       setStatus("failed");
       setError(textValue(event.data.message) || "The run failed. Review the safe trace.");
+      setApproval(null);
+      setRevisionOpen(false);
+      setRevisionComment("");
     }
   }
 
