@@ -140,6 +140,14 @@ def test_case_journey_diagnostic_uses_three_day_baseline() -> None:
     assert intent.chart_type.value == "bar"
 
 
+def test_compact_uat_date_range_is_inclusive() -> None:
+    intent = infer_uat_intent("Show Super Agent UAT turn_log detail rows 716-719")
+
+    assert intent is not None
+    assert intent.start_date == f"{date.today().year}-07-16"
+    assert intent.end_date == f"{date.today().year}-07-20"
+
+
 def test_low_day_followup_reuses_case_context_for_journey_diagnostic() -> None:
     context = "<conversation_history>\n[USER] case creation rate daily trend\n[ASSISTANT] The result is available.\n</conversation_history>"
     intent = infer_uat_intent("为什么7月18日表现这么低", context)

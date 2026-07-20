@@ -131,3 +131,9 @@ These change architecture or security and require owner confirmation:
 - On 2026-07-20 the user confirmed the default population rule for every Super Agent calculation: include rows where source='pcs-redirect', or where source<>'pcs-redirect' and channel IS NOT NULL; other traffic is treated as test traffic.
 - The rule is authoritative Knowledge super_agent.valid_user_traffic_population@1.0.0, linked to visit, turn, and telemetry datasets. Visit queries apply it directly; turn and telemetry queries apply it through allowlisted session_id membership in visit_log.
 - The active rule ID and version are included in the analysis plan, approval payload, audit trace, and result artifact. A future business change requires a reviewed Knowledge version rather than a silent prompt or code-only override.
+## A-30 - Cross-grain cohort-to-detail queries
+
+- On 2026-07-20 the user confirmed that `visit_log.is_device_switch=true` selects sessions, while the requested output can remain all related `turn_log` rows. The filter must not be pushed onto turn grain and the request must not be replaced by a turn count.
+- A typed detail plan therefore separates the output dataset from an optional cohort dataset. The planner resolves one active, automatic relationship from versioned semantic metadata before generating SQL, records its ID/version in the trace, and stops on missing, ambiguous, or live-schema-conflicting relationships.
+- The active `super_agent_uat.visit_to_turn@1.0.0` relationship maps `visit_log.session_id` to `turn_log.session_id` as one-to-many. Session date and traffic-population conditions apply inside the cohort; explicit turn filters apply outside it.
+- "All fields" means every currently allowlisted output field is enumerated explicitly. Results remain read-only, approval-gated, and bounded by row, byte, and timeout limits.

@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from ama_teammate.analysis_skills.models import SkillExecutionStep, SkillReference
 from ama_teammate.learned_metrics.models import (
     ControlledMetricSpec,
+    DetailCohortSpec,
     MetricFilter,
     MetricFilterGroup,
 )
@@ -66,6 +67,7 @@ class AnalysisIntent(BaseModel):
     detail_limit: int = Field(default=50, ge=1, le=200)
     detail_filters: list[MetricFilter] = Field(default_factory=list, max_length=12)
     detail_filter_groups: list[MetricFilterGroup] = Field(default_factory=list, max_length=8)
+    detail_cohort: DetailCohortSpec | None = None
 
 
 class JoinPlan(BaseModel):

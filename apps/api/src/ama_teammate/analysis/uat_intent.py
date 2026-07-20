@@ -452,6 +452,17 @@ def _dates(text: str) -> tuple[date, date, list[str]]:
     ):
         parsed.append(date(int(year), int(month), int(day)))
     if not parsed:
+        for start_month, start_day, end_month, end_day in re.findall(
+            r"(?<!\d)(\d{1,2})(\d{2})\s*[-~\u81f3\u5230]\s*(\d{1,2})(\d{2})(?!\d)",
+            text,
+        ):
+            parsed.extend(
+                (
+                    date(today.year, int(start_month), int(start_day)),
+                    date(today.year, int(end_month), int(end_day)),
+                )
+            )
+
         for month, day in re.findall(r"(?<!\d)(\d{1,2})/(\d{1,2})(?!\d)", text):
             parsed.append(date(today.year, int(month), int(day)))
     if not parsed:
@@ -497,6 +508,18 @@ def _explicit_dates(text: str) -> list[date]:
         text,
     ):
         parsed.append(date(int(year), int(month), int(day)))
+    if not parsed:
+        for start_month, start_day, end_month, end_day in re.findall(
+            r"(?<!\d)(\d{1,2})(\d{2})\s*[-~\u81f3\u5230]\s*(\d{1,2})(\d{2})(?!\d)",
+            text,
+        ):
+            parsed.extend(
+                (
+                    date(today.year, int(start_month), int(start_day)),
+                    date(today.year, int(end_month), int(end_day)),
+                )
+            )
+
     if not parsed:
         for month, day in re.findall(r"(?<!\d)(\d{1,2})/(\d{1,2})(?!\d)", text):
             parsed.append(date(today.year, int(month), int(day)))

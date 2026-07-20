@@ -24,6 +24,29 @@ definitions:
     caveats: [Always report unmatched sales and campaign rates.]
     business_rule_ids: [demo.readonly_bounded_results]
   - kind: relationship
+    id: super_agent_uat.visit_to_turn
+    version: 1.0.0
+    status: active
+    name: UAT Visit Session to Turn
+    description: Selects a session cohort in visit_log and retrieves its related turn_log rows without changing turn grain.
+    owner: Super Agent Data and Operations
+    source: Explicit user-confirmed cohort-to-detail SQL 2026-07-20
+    effective_from: 2026-06-01
+    effective_to: null
+    last_reviewed_at: 2026-07-20
+    left_dataset_id: super_agent_uat.visit_log
+    right_dataset_id: super_agent_uat.turn_log
+    join_keys:
+      - {left_field_id: super_agent_uat.visit_log.session_id, right_field_id: super_agent_uat.turn_log.session_id, type_coercion: canonical string}
+    cardinality: one_to_many
+    time_window_matching: {enabled: false, left_time_field_id: null, right_time_field_id: null, tolerance: null, direction: null}
+    duplication_risks: [Each selected session can return many turn rows., Aggregating after expansion can multiply session-grain measures.]
+    automatic_join_allowed: true
+    cross_database: false
+    caveats: [Cohort filters remain on visit_log; output filters remain on turn_log., Detail output stays bounded by connector row and byte limits.]
+    business_rule_ids: [super_agent.valid_user_traffic_population]
+
+  - kind: relationship
     id: super_agent.session_to_turn
     version: 0.9.30
     status: draft

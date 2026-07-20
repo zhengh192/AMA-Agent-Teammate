@@ -45,13 +45,24 @@ class MetricFilter(BaseModel):
         return self
 
 
-
 class MetricFilterGroup(BaseModel):
     """An AND group; multiple groups on a spec are combined with OR."""
 
     model_config = ConfigDict(extra="forbid")
 
     filters: list[MetricFilter] = Field(min_length=1, max_length=12)
+
+
+class DetailCohortSpec(BaseModel):
+    """Select entities in one dataset before returning detail rows from another."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    table: Literal["visit_log", "turn_log", "telemetry_log"]
+    time_field: str = Field(min_length=1, max_length=120)
+    filters: list[MetricFilter] = Field(default_factory=list, max_length=12)
+    filter_groups: list[MetricFilterGroup] = Field(default_factory=list, max_length=8)
+
 
 class ControlledMetricSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -82,7 +93,6 @@ class ControlledMetricSpec(BaseModel):
         return self
 
 
-
 class AdHocQueryRequest(BaseModel):
     """Untrusted model output describing a query without containing SQL."""
 
@@ -92,10 +102,11 @@ class AdHocQueryRequest(BaseModel):
     display_name: str = Field(min_length=1, max_length=160)
     calculation: ControlledMetricSpec | None = None
     detail_table: Literal["visit_log", "turn_log", "telemetry_log"] | None = None
-    detail_fields: list[str] = Field(default_factory=list, max_length=30)
+    detail_fields: list[str] = Field(default_factory=list, max_length=200)
     detail_limit: int = Field(default=50, ge=1, le=200)
     detail_filters: list[MetricFilter] = Field(default_factory=list, max_length=12)
     detail_filter_groups: list[MetricFilterGroup] = Field(default_factory=list, max_length=8)
+    detail_cohort: DetailCohortSpec | None = None
     assumptions: list[str] = Field(default_factory=list, max_length=12)
 
     @model_validator(mode="after")
@@ -105,6 +116,7 @@ class AdHocQueryRequest(BaseModel):
         if self.mode == "detail" and (self.detail_table is None or not self.detail_fields):
             raise ValueError("detail mode requires a table and explicit fields")
         return self
+
 
 class LearnedMetricDefinition(BaseModel):
     model_config = ConfigDict(extra="forbid")

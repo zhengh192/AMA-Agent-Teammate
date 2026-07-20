@@ -91,3 +91,18 @@ datasets. Direct visit calculations use its approved condition; turn and telemet
 inherit the population through session membership in visit_log. The Knowledge admin page exposes
 the active version, expression, owner, provenance, applicable datasets, and caveats. A meaning
 change requires a reviewed new semantic version.
+## Cohort-to-detail semantics
+
+Some questions select a population at one grain and request output at another. Keep these concepts
+separate:
+
+- the cohort dataset owns population filters and the requested date window;
+- the output dataset owns the returned fields, output-only filters, and row grain;
+- one active relationship with `automatic_join_allowed: true` supplies the entity-key mapping;
+- the relationship ID/version is included in the analysis trace;
+- missing, ambiguous, inactive, or schema-conflicting relationships stop planning.
+
+For example, "sessions where `visit_log.is_device_switch=true`, return all `turn_log` content"
+uses `super_agent_uat.visit_to_turn@1.0.0`. The generated SQL enumerates all permitted turn fields,
+selects session IDs in a bounded visit subquery, preserves one row per turn, and orders by session
+and turn time. It does not count turns and does not apply the session flag to `turn_log`.

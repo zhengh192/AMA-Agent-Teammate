@@ -41,6 +41,7 @@ from ama_teammate.semantic_metadata.models import (
     DefinitionReference,
     DefinitionStatus,
     DefinitionType,
+    FieldDefinition,
     RelationshipDefinition,
 )
 from ama_teammate.semantic_metadata.registry import SemanticMetadataRegistry
@@ -88,9 +89,7 @@ class AnalysisPlanner:
             raise AnalysisDefinitionNeedsClarification(
                 "The active Super Agent traffic-population Knowledge rule is unavailable."
             )
-        statement = parse_one(
-            f"SELECT 1 FROM visit_log WHERE {rule.expression}", read="mysql"
-        )
+        statement = parse_one(f"SELECT 1 FROM visit_log WHERE {rule.expression}", read="mysql")
         where = statement.args.get("where")
         if where is None:
             raise AnalysisDefinitionNeedsClarification(
@@ -212,7 +211,11 @@ class AnalysisPlanner:
                 id=dataset.id,
                 version=dataset.version,
             )
-            relationships = []
+            relationships = (
+                [self._resolve_detail_cohort_relationship(intent)[0]]
+                if intent.detail_cohort is not None
+                else []
+            )
         elif learned is not None:
             if learned.id.startswith("field-query-"):
                 spec = learned.definition
@@ -570,6 +573,63 @@ class AnalysisPlanner:
             alternatives.append("(" + " AND ".join(clauses) + ")")
         return ["(" + " OR ".join(alternatives) + ")"] if alternatives else []
 
+    def _resolve_detail_cohort_relationship(
+        self, intent: AnalysisIntent
+    ) -> tuple[RelationshipDefinition, str, str]:
+        if intent.detail_table is None or intent.detail_cohort is None:
+            raise AnalysisDefinitionNeedsClarification(
+                "A cohort-to-detail request requires both the output and cohort datasets."
+            )
+        detail_dataset_id = f"super_agent_uat.{intent.detail_table}"
+        cohort_dataset_id = f"super_agent_uat.{intent.detail_cohort.table}"
+        candidates = [
+            item
+            for item in self.semantic_registry.list_definitions(
+                DefinitionType.RELATIONSHIP, DefinitionStatus.ACTIVE
+            )
+            if isinstance(item, RelationshipDefinition)
+            and item.automatic_join_allowed
+            and {
+                item.left_dataset_id,
+                item.right_dataset_id,
+            }
+            == {cohort_dataset_id, detail_dataset_id}
+        ]
+        if len(candidates) != 1:
+            raise AnalysisDefinitionNeedsClarification(
+                "The requested cohort and detail datasets do not have one unique active "
+                "automatic relationship. Please confirm the entity key."
+            )
+        relationship = candidates[0]
+        if len(relationship.join_keys) != 1:
+            raise AnalysisDefinitionNeedsClarification(
+                "The cohort-to-detail relationship requires a unique join-key mapping."
+            )
+        join_key = relationship.join_keys[0]
+        if relationship.left_dataset_id == cohort_dataset_id:
+            cohort_field_id = join_key.left_field_id
+            detail_field_id = join_key.right_field_id
+        else:
+            cohort_field_id = join_key.right_field_id
+            detail_field_id = join_key.left_field_id
+        cohort_field = self.semantic_registry.get(DefinitionType.FIELD, cohort_field_id)
+        detail_field = self.semantic_registry.get(DefinitionType.FIELD, detail_field_id)
+        if not isinstance(cohort_field, FieldDefinition) or not isinstance(
+            detail_field, FieldDefinition
+        ):
+            raise AnalysisDefinitionNeedsClarification(
+                "The cohort relationship does not resolve to active physical fields."
+            )
+        source = self.registry.config("super_agent_uat")
+        if (
+            cohort_field.physical_name not in source.tables[intent.detail_cohort.table].column_names
+            or detail_field.physical_name not in source.tables[intent.detail_table].column_names
+        ):
+            raise AnalysisDefinitionNeedsClarification(
+                "The live database schema conflicts with the cohort relationship metadata."
+            )
+        return relationship, cohort_field.physical_name, detail_field.physical_name
+
     def _bind_uat_detail_fields(self, intent: AnalysisIntent, question: str) -> AnalysisIntent:
         if intent.source_ids != ["super_agent_uat"]:
             raise AnalysisDefinitionNeedsClarification(
@@ -856,6 +916,49 @@ ORDER BY comparison_window, value DESC
                 "telemetry_log": "timestamp",
             }[intent.detail_table]
             quoted_fields = [f"`{field.replace('`', '``')}`" for field in intent.detail_fields]
+            if intent.detail_cohort is not None:
+                _, cohort_key, detail_key = self._resolve_detail_cohort_relationship(intent)
+                cohort = intent.detail_cohort
+                cohort_conditions = [
+                    f"`{cohort.time_field}` >= :start_date",
+                    f"`{cohort.time_field}` < :end_date",
+                    *self._compile_filters(cohort.filters, parameters, "cohort"),
+                    *self._compile_filter_groups(cohort.filter_groups, parameters, "cohort_group"),
+                    self._valid_traffic_condition(cohort.table),
+                ]
+                detail_conditions = [
+                    *self._compile_filters(intent.detail_filters, parameters, "detail"),
+                    *self._compile_filter_groups(
+                        intent.detail_filter_groups, parameters, "detail_group"
+                    ),
+                    (
+                        f"`{detail_key}` IN (SELECT DISTINCT `{cohort_key}` "
+                        f"FROM `{cohort.table}` WHERE " + " AND ".join(cohort_conditions) + ")"
+                    ),
+                ]
+                order_fields = list(
+                    dict.fromkeys(
+                        field
+                        for field in (detail_key, time_field)
+                        if field in source.tables[intent.detail_table].column_names
+                    )
+                )
+                order_sql = ", ".join(f"`{field}`" for field in order_fields)
+                sql = (
+                    f"SELECT {', '.join(quoted_fields)} FROM `{intent.detail_table}` WHERE "
+                    + " AND ".join(detail_conditions)
+                    + f" ORDER BY {order_sql}"
+                )
+                return QueryProposal(
+                    purpose=(
+                        f"Select entities in {cohort.table}, then read up to "
+                        f"{common['max_rows']} related {intent.detail_table} rows at their "
+                        "native grain with explicit columns after approval."
+                    ),
+                    sql=sql,
+                    **common,
+                )
+
             detail_conditions = [
                 f"`{time_field}` >= :start_date",
                 f"`{time_field}` < :end_date",
@@ -1075,8 +1178,7 @@ ORDER BY comparison_window, value DESC
             return QueryProposal(
                 purpose=f"Count distinct {identifier} values for the bounded period.",
                 sql=(
-                    f"SELECT COUNT(DISTINCT {identifier}) AS value FROM {table} "
-                    f"WHERE {where_sql}"
+                    f"SELECT COUNT(DISTINCT {identifier}) AS value FROM {table} WHERE {where_sql}"
                 ),
                 **common,
             )

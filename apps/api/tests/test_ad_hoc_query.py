@@ -51,7 +51,9 @@ class CatalogOnlyConnector:
                     columns=[
                         ColumnCatalog(name="session_id", data_type="varchar"),
                         ColumnCatalog(name="start_time", data_type="datetime"),
+                        ColumnCatalog(name="date", data_type="date"),
                         ColumnCatalog(name="source", data_type="varchar"),
+                        ColumnCatalog(name="is_device_switch", data_type="boolean"),
                         ColumnCatalog(name="is_cid", data_type="varchar"),
                         ColumnCatalog(name="intent_type", data_type="varchar"),
                         ColumnCatalog(name="eticket_case_number", data_type="varchar"),
@@ -312,6 +314,40 @@ def test_controlled_engine_prepares_bounded_untrusted_text_review() -> None:
     assert review["duplicate_text_rows"] == 1
 
     assert review["source_text_samples"] == ["first", "first", "second"]
+
+
+@pytest.mark.asyncio
+async def test_cross_grain_detail_selects_visit_sessions_before_returning_turn_rows(
+    client: TestClient,
+) -> None:
+    plan = await _plan(
+        client,
+        "UAT 716-719 switch_device\u6210\u529f\u7684sessions\uff0c"
+        "\u4eceturn_log\u5bfc\u51fa\u8fd9\u4e9bsession\u7684\u5168\u90e8\u5185\u5bb9",
+    )
+
+    query = plan["queries"][0]
+    sql = str(query["sql"])
+
+    assert plan["analysis_type"] == "detail"
+    assert plan["metric"] == "turn_log rows for selected visit_log entities"
+    assert query["parameters"]["start_date"] == "2026-07-16"
+    assert query["parameters"]["end_date"] == "2026-07-20"
+    assert query["parameters"]["cohort_0"] is True
+    assert "FROM `turn_log`" in sql
+    assert "COUNT(" not in sql
+    assert "`session_id` IN (SELECT DISTINCT `session_id` FROM `visit_log`" in sql
+    assert "`is_device_switch` = :cohort_0" in sql or "is_device_switch = :cohort_0" in sql
+    assert "ORDER BY `session_id`, `start_time`" in sql
+    assert "`date` >= :start_date" in sql
+    assert "SELECT *" not in sql
+    assert plan["relationship_definitions"] == [
+        {
+            "definition_type": "relationship",
+            "id": "super_agent_uat.visit_to_turn",
+            "version": "1.0.0",
+        }
+    ]
 
 
 @pytest.mark.asyncio
