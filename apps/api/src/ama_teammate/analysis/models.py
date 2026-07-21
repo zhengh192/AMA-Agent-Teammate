@@ -79,11 +79,6 @@ class AnalysisTaskUnderstanding(BaseModel):
     is_follow_up: bool = False
     needs_clarification: bool = False
     clarification_question: str | None = Field(default=None, max_length=500)
-    investigation_steps: list[InvestigationStep] = Field(default_factory=list, max_length=12)
-    preferred_tools: list[Literal["sql", "controlled_analysis", "python_sandbox"]] = Field(
-        default_factory=list,
-        max_length=6,
-    )
 
 
 class AnalysisIntent(BaseModel):
@@ -113,10 +108,6 @@ class AnalysisIntent(BaseModel):
     task_kind: AnalysisTaskKind = AnalysisTaskKind.CALCULATE
     user_goal: str = ""
     investigation_steps: list[InvestigationStep] = Field(default_factory=list, max_length=12)
-    preferred_tools: list[Literal["sql", "controlled_analysis", "python_sandbox"]] = Field(
-        default_factory=list,
-        max_length=6,
-    )
 
 
 class JoinPlan(BaseModel):
@@ -165,7 +156,6 @@ class AnalysisPlan(BaseModel):
             "investigation_steps": [
                 item.model_dump(mode="json") for item in self.intent.investigation_steps
             ],
-            "preferred_tools": list(self.intent.preferred_tools),
             "join_plan": self.join_plan.model_dump() if self.join_plan else None,
             "policy_version": self.policy_version,
             "metric_definition": self.metric_definition.model_dump(mode="json"),
@@ -279,48 +269,6 @@ class ChartSpec(BaseModel):
     fallback_table: bool = False
 
 
-class AnalysisLearningCandidate(BaseModel):
-    """A visible suggestion only; it never changes active Knowledge, Skill, or Memory."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    kind: Literal["knowledge", "skill", "memory"]
-    title: str = Field(min_length=1, max_length=160)
-    proposal: str = Field(min_length=1, max_length=1_500)
-    source_step: int = Field(ge=1)
-
-
-class AnalysisLoopReview(BaseModel):
-    """Observable loop decision without exposing private chain-of-thought."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    decision: Literal["continue", "finish"]
-    observation: str = Field(min_length=1, max_length=1_500)
-    next_question: str | None = Field(default=None, max_length=1_000)
-    completed_plan_step: str = Field(min_length=1, max_length=500)
-    remaining_plan_steps: list[str] = Field(default_factory=list, max_length=8)
-    learning_candidates: list[AnalysisLearningCandidate] = Field(default_factory=list, max_length=6)
-
-
-class AnalysisStepResult(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    iteration: int = Field(ge=1, le=8)
-    plan_id: str
-    intent: AnalysisIntent
-    datasets: list[Dataset]
-    final_dataset_id: str
-    join_quality: JoinQuality | None = None
-    computation: AnalysisComputation
-    chart: ChartSpec
-    metric_reference: DefinitionReference
-    business_rule_references: list[DefinitionReference] = Field(default_factory=list)
-    executed_query_references: list[str] = Field(default_factory=list)
-    data_source_references: list[str] = Field(default_factory=list)
-    skill_references: list[SkillReference] = Field(default_factory=list)
-
-
 class AnalysisResult(BaseModel):
     id: str
     run_id: str
@@ -346,5 +294,3 @@ class AnalysisResult(BaseModel):
     business_rule_references: list[DefinitionReference] = Field(default_factory=list)
     skill_references: list[SkillReference] = Field(default_factory=list)
     data_confidence: DataConfidence = DataConfidence.HIGH
-    loop_observations: list[str] = Field(default_factory=list)
-    learning_candidates: list[AnalysisLearningCandidate] = Field(default_factory=list)

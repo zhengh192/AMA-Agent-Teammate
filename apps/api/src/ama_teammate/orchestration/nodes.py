@@ -249,9 +249,9 @@ def intake_node(state: AgentState) -> dict[str, Any]:
 def assess_goal_node(state: AgentState) -> dict[str, Any]:
     text = state["input_text"].lower()
     combined_text = str(state.get("combined_input", state["input_text"])).lower()
-    analysis_followup = _contains_any(text, ANALYSIS_DIAGNOSTIC_MARKERS) and _contains_any(
-        combined_text, ANALYSIS_SUBJECT_MARKERS
-    )
+    analysis_followup = _contains_any(
+        text, ANALYSIS_DIAGNOSTIC_MARKERS
+    ) and _contains_any(combined_text, ANALYSIS_SUBJECT_MARKERS)
     if is_jira_issue_request(text) or is_jira_execution_continuation(text, combined_text):
         route = "jira"
         missing = []
@@ -296,6 +296,12 @@ def build_assess_goal_node(providers: ProviderBundle) -> Any:
     async def model_assess_goal(state: AgentState) -> dict[str, Any]:
         fallback = assess_goal_node(state)
         current_text = state["input_text"].lower()
+        if fallback["route"] in {"chat", "knowledge", "jira"} or (
+            fallback["route"] == "analysis"
+            and not fallback["missing_fields"]
+            and _is_pilot_source(str(state.get("combined_input", state["input_text"])).lower())
+        ):
+            return fallback
         try:
             combined = str(state.get("combined_input", state["input_text"]))[:20_000]
             assessment = await providers.provider.generate_structured(
@@ -315,10 +321,8 @@ def build_assess_goal_node(providers: ProviderBundle) -> Any:
             if not isinstance(assessment, GoalAssessment):
                 raise TypeError("Provider returned an invalid goal assessment")
             route = assessment.route
-            if (
-                fallback["route"] == "jira"
-                or is_jira_issue_request(current_text)
-                or is_jira_execution_continuation(current_text, combined)
+            if is_jira_issue_request(current_text) or is_jira_execution_continuation(
+                current_text, combined
             ):
                 route = "jira"
             elif is_explicit_analysis_request(current_text) or (
@@ -331,12 +335,6 @@ def build_assess_goal_node(providers: ProviderBundle) -> Any:
             missing = [
                 item for item in assessment.missing_fields if item in _ALLOWED_MISSING_FIELDS
             ]
-            if route == "jira":
-                # The Jira action planner owns action-specific clarification. A model may
-                # mistake a create/search request for a read and request an issue key;
-                # letting that generic guess escape would block the tool before it can
-                # resolve the actual action.
-                missing = []
             if fallback["route"] == route:
                 for item in fallback["missing_fields"]:
                     if item not in missing:

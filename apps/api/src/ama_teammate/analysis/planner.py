@@ -139,10 +139,6 @@ class AnalysisPlanner:
             if self.skill_registry is not None
             else []
         )
-        if self.skill_registry is not None:
-            active_packages = self.skill_registry.list_packages(SkillStatus.ACTIVE)
-            for item, package in zip(skill_context, active_packages, strict=True):
-                item["method"] = package.instructions[:4_000]
         if not definition_change and is_uat_reference(question, context):
             try:
                 task_frame = await self.task_understanding.understand(
@@ -235,9 +231,6 @@ class AnalysisPlanner:
                     "user_goal": task_frame.user_goal,
                 }
             )
-        if task_frame is not None:
-            task_updates["investigation_steps"] = task_frame.investigation_steps
-            task_updates["preferred_tools"] = task_frame.preferred_tools
         intent = intent.model_copy(update=task_updates)
         skill_plan = (
             self.skill_registry.build_execution_plan(intent.analysis_type, question)

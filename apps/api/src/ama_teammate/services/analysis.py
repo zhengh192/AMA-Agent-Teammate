@@ -2,21 +2,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from ama_teammate.analysis.agent_loop import BoundedAnalysisLoop
 from ama_teammate.analysis.artifacts import CSVArtifactWriter
 from ama_teammate.analysis.charts import ChartBuilder
 from ama_teammate.analysis.engine import ControlledAnalysisEngine
-from ama_teammate.analysis.execution_loop import (
-    execute_analysis_step,
-    finalize_analysis_steps,
-    prepare_followup_plan,
-    review_analysis_step,
-)
 from ama_teammate.analysis.join import BoundedDuckDBJoiner
 from ama_teammate.analysis.json_artifacts import JSONArtifactStore
 from ama_teammate.analysis.models import AnalysisPlan, AnalysisResult, Dataset
 from ama_teammate.analysis.planner import AnalysisPlanner
-from ama_teammate.analysis.python_sandbox import PythonSandbox
 from ama_teammate.analysis.quality import assess_dataset_quality
 from ama_teammate.data_access.models import QueryExecutionFailure, QueryExecutionRequest
 from ama_teammate.data_access.registry import ConnectorRegistry
@@ -43,8 +35,6 @@ class AnalysisService:
         evidence_validator: EvidenceValidator,
         csv_writer: CSVArtifactWriter,
         json_store: JSONArtifactStore,
-        analysis_loop: BoundedAnalysisLoop,
-        python_sandbox: PythonSandbox,
     ) -> None:
         self.planner = planner
         self.registry = registry
@@ -57,8 +47,6 @@ class AnalysisService:
         self.evidence_validator = evidence_validator
         self.csv_writer = csv_writer
         self.json_store = json_store
-        self.analysis_loop = analysis_loop
-        self.python_sandbox = python_sandbox
 
     async def create_plan(self, state: dict[str, Any]) -> dict[str, Any]:
         run_id = str(state["run_id"])
@@ -217,18 +205,6 @@ class AnalysisService:
             "approval_status": row.status,
             "status": "executing" if row.status == ApprovalStatus.APPROVED.value else "cancelled",
         }
-
-    async def execute_step(self, state: dict[str, Any]) -> dict[str, Any]:
-        return await execute_analysis_step(self, state)
-
-    async def review_step(self, state: dict[str, Any]) -> dict[str, Any]:
-        return await review_analysis_step(self, state)
-
-    async def create_followup_plan(self, state: dict[str, Any]) -> dict[str, Any]:
-        return await prepare_followup_plan(self, state)
-
-    async def finalize(self, state: dict[str, Any]) -> dict[str, Any]:
-        return await finalize_analysis_steps(self, state)
 
     async def execute(self, state: dict[str, Any]) -> dict[str, Any]:
         plan = await self._require_plan(str(state["plan_ref"]))
@@ -490,7 +466,6 @@ class AnalysisService:
             "investigation_steps": [
                 item.model_dump(mode="json") for item in plan.intent.investigation_steps
             ],
-            "preferred_tools": list(plan.intent.preferred_tools),
             "queries": [
                 {
                     "id": query.proposal_id,

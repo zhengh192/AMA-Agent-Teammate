@@ -18,9 +18,7 @@ from ama_teammate.semantic_metadata.registry import (
 from ama_teammate.services.analysis import AnalysisService
 
 
-def build_analysis_node_functions(
-    analysis_service: AnalysisService,
-) -> tuple[Any, Any, Any, Any, Any, Any]:
+def build_analysis_node_functions(analysis_service: AnalysisService) -> tuple[Any, Any, Any]:
     async def create_analysis_plan(state: AgentState) -> dict[str, Any]:
         try:
             return await analysis_service.create_plan(dict(state))
@@ -151,34 +149,14 @@ def build_analysis_node_functions(
         decision = interrupt(payload)
         return await analysis_service.apply_decision(dict(state), decision)
 
-    async def execute_analysis_step(state: AgentState) -> dict[str, Any]:
-        return await analysis_service.execute_step(dict(state))
+    async def execute_analysis(state: AgentState) -> dict[str, Any]:
+        return await analysis_service.execute(dict(state))
 
-    async def review_analysis_step(state: AgentState) -> dict[str, Any]:
-        return await analysis_service.review_step(dict(state))
-
-    async def create_followup_plan(state: AgentState) -> dict[str, Any]:
-        return await analysis_service.create_followup_plan(dict(state))
-
-    async def finalize_analysis(state: AgentState) -> dict[str, Any]:
-        return await analysis_service.finalize(dict(state))
-
-    return (
-        create_analysis_plan,
-        sql_approval,
-        execute_analysis_step,
-        review_analysis_step,
-        create_followup_plan,
-        finalize_analysis,
-    )
+    return create_analysis_plan, sql_approval, execute_analysis
 
 
 def route_after_approval(state: AgentState) -> str:
     return "execute" if state.get("approval_status") == "approved" else "stop"
-
-
-def route_after_analysis_review(state: AgentState) -> str:
-    return "continue" if state.get("analysis_loop_decision") == "continue" else "finish"
 
 
 def stop_analysis_node(state: AgentState) -> dict[str, Any]:

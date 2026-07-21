@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Literal, TypedDict
+from typing import Literal, TypedDict
 
 
 class AgentState(TypedDict, total=False):
@@ -30,12 +30,6 @@ class AgentState(TypedDict, total=False):
     analysis_result_ref: str
     final_answer_ref: str
     selected_skill_refs: list[dict[str, str]]
-    analysis_loop_iteration: int
-    analysis_step_results: list[dict[str, Any]]
-    analysis_loop_review: dict[str, Any]
-    analysis_loop_decision: Literal["continue", "finish"]
-    analysis_loop_observations: list[str]
-    analysis_learning_candidates: list[dict[str, Any]]
     jira_issue_keys: list[str]
     jira_status: str
     jira_fast_answer: str

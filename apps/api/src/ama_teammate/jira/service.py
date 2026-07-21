@@ -182,35 +182,6 @@ class JiraReadService:
         if jql:
             return JiraActionPlan(action="search", jql=jql, max_results=25)
 
-        create_markers = (
-            "create jira",
-            "raise jira",
-            "创建jira",
-            "创建 jira",
-            "新建jira",
-            "新建 jira",
-        )
-        if any(marker in lowered for marker in create_markers):
-            summary = re.search(r"(?:标题|summary)\s*[:：]\s*([^\n]+)", current, re.I)
-            description = re.search(
-                r"(?:描述|description)\s*[:：]\s*([\s\S]+)",
-                current,
-                re.I,
-            )
-            projects = sorted(self.client.allowed_projects)
-            if summary and len(projects) == 1:
-                return JiraActionPlan(
-                    action="create",
-                    project_key=projects[0],
-                    summary=summary.group(1).strip(),
-                    description=description.group(1).strip() if description else "",
-                    issue_type="Task",
-                )
-            return JiraActionPlan(
-                action="clarify",
-                clarification_question="请告诉我新建 Jira 的标题和描述。",
-            )
-
         if keys and any(
             marker in lowered for marker in ("改状态", "状态改", "变更状态", "transition")
         ):

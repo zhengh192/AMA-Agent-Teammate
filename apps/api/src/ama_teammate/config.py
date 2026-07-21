@@ -44,11 +44,6 @@ class Settings(BaseSettings):
     ama_model_assisted_routing: bool = True
     ama_analysis_synthesis: bool = True
     ama_analysis_synthesis_timeout_seconds: float = Field(default=8.0, gt=0, le=60)
-    ama_analysis_loop_enabled: bool = True
-    ama_analysis_loop_max_iterations: int = Field(default=3, ge=1, le=8)
-    ama_python_sandbox_enabled: bool = False
-    ama_python_sandbox_image: str = "python:3.12.4-slim"
-    ama_python_sandbox_timeout_seconds: float = Field(default=15.0, gt=0, le=60)
     ama_knowledge_synthesis_timeout_seconds: float = Field(default=12.0, gt=0, le=60)
     ama_development_user_id: str = "local-dev-user"
     ama_development_user_name: str = "Local Developer"
