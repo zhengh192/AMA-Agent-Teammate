@@ -461,6 +461,11 @@ class AnalysisService:
                 if plan.intent.journey_diagnostic_contract
                 else None
             ),
+            "task_kind": plan.intent.task_kind.value,
+            "user_goal": plan.intent.user_goal,
+            "investigation_steps": [
+                item.model_dump(mode="json") for item in plan.intent.investigation_steps
+            ],
             "queries": [
                 {
                     "id": query.proposal_id,

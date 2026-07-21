@@ -14,14 +14,17 @@ from ama_teammate.analysis.models import (
     AnalysisIntent,
     AnalysisKind,
     AnalysisPlan,
+    AnalysisTaskKind,
     ChartKind,
     JoinPlan,
 )
+from ama_teammate.analysis.task_understanding import TaskUnderstandingService
 from ama_teammate.analysis.uat_intent import (
     infer_uat_intent,
     is_uat_reference,
     parse_uat_dates,
 )
+from ama_teammate.analysis_skills.models import SkillStatus
 from ama_teammate.analysis_skills.registry import AnalysisSkillRegistry
 from ama_teammate.data_access.registry import ConnectorRegistry
 from ama_teammate.domain.models import new_id
@@ -81,6 +84,7 @@ class AnalysisPlanner:
         self.skill_registry = skill_registry
         self.learned_metrics = learned_metrics
         self.ad_hoc_interpreter = AdHocQueryInterpreter(providers, registry, learned_metrics)
+        self.task_understanding = TaskUnderstandingService(providers)
 
     def _valid_traffic_condition(self, table: str) -> str:
         rules = self.semantic_registry.active_business_rules_for_connectors(["super_agent_uat"])
@@ -120,12 +124,44 @@ class AnalysisPlanner:
     ) -> AnalysisPlan:
         learned = None
         definition_change = is_definition_change_request(question)
-        try:
-            intent = (
-                await self.ad_hoc_interpreter.infer(question, context)
-                if not definition_change and is_uat_reference(question, context)
-                else None
+        task_frame = None
+        skill_context = (
+            [
+                {
+                    "id": package.metadata.id,
+                    "description": package.metadata.description,
+                    "analysis_intents": package.metadata.analysis_intents,
+                    "aliases": package.metadata.aliases,
+                    "trigger_examples": package.metadata.trigger_examples.model_dump(),
+                }
+                for package in self.skill_registry.list_packages(SkillStatus.ACTIVE)
+            ]
+            if self.skill_registry is not None
+            else []
+        )
+        if not definition_change and is_uat_reference(question, context):
+            try:
+                task_frame = await self.task_understanding.understand(
+                    question, context, skill_context
+                )
+            except Exception:
+                # Semantic framing improves routing but never bypasses the deterministic fallback.
+                task_frame = None
+        if task_frame is not None and task_frame.needs_clarification:
+            raise AnalysisDefinitionNeedsClarification(
+                task_frame.clarification_question
+                or "The intended analytical outcome needs clarification."
             )
+        try:
+            if task_frame is not None and task_frame.task_kind == AnalysisTaskKind.DIAGNOSE:
+                framed_question = f"{question}\n{task_frame.incident_date or ''}"
+                intent = infer_uat_intent(framed_question, context)
+            else:
+                intent = (
+                    await self.ad_hoc_interpreter.infer(question, context)
+                    if not definition_change and is_uat_reference(question, context)
+                    else None
+                )
         except AdHocQueryNeedsClarification as exc:
             raise AnalysisDefinitionNeedsClarification(str(exc)) from exc
         field_query = (
@@ -187,7 +223,15 @@ class AnalysisPlanner:
         response_language = (
             "zh-CN" if any("\u4e00" <= character <= "\u9fff" for character in question) else "en"
         )
-        intent = intent.model_copy(update={"response_language": response_language})
+        task_updates: dict[str, object] = {"response_language": response_language}
+        if task_frame is not None:
+            task_updates.update(
+                {
+                    "task_kind": task_frame.task_kind,
+                    "user_goal": task_frame.user_goal,
+                }
+            )
+        intent = intent.model_copy(update=task_updates)
         skill_plan = (
             self.skill_registry.build_execution_plan(intent.analysis_type, question)
             if self.skill_registry
@@ -322,7 +366,8 @@ class AnalysisPlanner:
             run_id=run_id,
             question=question,
             goal=(
-                f"Compute {intent.metric} using {intent.analysis_type.value}"
+                intent.user_goal
+                or f"Compute {intent.metric} using {intent.analysis_type.value}"
                 f"{assumption_label} with bounded evidence."
             ),
             intent=intent,
@@ -880,9 +925,7 @@ class AnalysisPlanner:
                     else "NULL"
                 ),
                 "symptom": (
-                    "NULLIF(CAST(t.symptom AS CHAR), '')"
-                    if "symptom" in turn_columns
-                    else "NULL"
+                    "NULLIF(CAST(t.symptom AS CHAR), '')" if "symptom" in turn_columns else "NULL"
                 ),
                 "flow_step": (
                     "NULLIF(CAST(t.flow_step AS CHAR), '')"

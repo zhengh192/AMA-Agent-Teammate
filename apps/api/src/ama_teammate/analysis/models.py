@@ -50,6 +50,37 @@ class ChartKind(StrEnum):
     FUNNEL = "funnel"
 
 
+class AnalysisTaskKind(StrEnum):
+    CALCULATE = "calculate"
+    RETRIEVE = "retrieve"
+    COMPARE = "compare"
+    DIAGNOSE = "diagnose"
+    EXPLORE = "explore"
+
+
+class InvestigationStep(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    order: int = Field(ge=1, le=12)
+    name: str = Field(min_length=1, max_length=120)
+    objective: str = Field(min_length=1, max_length=500)
+    completion_signal: str = Field(min_length=1, max_length=500)
+
+
+class AnalysisTaskUnderstanding(BaseModel):
+    """Bounded semantic task frame; it is a plan, never private reasoning."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    task_kind: AnalysisTaskKind
+    user_goal: str = Field(min_length=1, max_length=500)
+    subject: str = Field(min_length=1, max_length=160)
+    incident_date: str | None = None
+    is_follow_up: bool = False
+    needs_clarification: bool = False
+    clarification_question: str | None = Field(default=None, max_length=500)
+
+
 class AnalysisIntent(BaseModel):
     analysis_type: AnalysisKind
     metric: str
@@ -74,6 +105,9 @@ class AnalysisIntent(BaseModel):
     detail_cohort: DetailCohortSpec | None = None
     response_language: Literal["en", "zh-CN"] = "en"
     journey_diagnostic_contract: JourneyDiagnosticContract | None = None
+    task_kind: AnalysisTaskKind = AnalysisTaskKind.CALCULATE
+    user_goal: str = ""
+    investigation_steps: list[InvestigationStep] = Field(default_factory=list, max_length=12)
 
 
 class JoinPlan(BaseModel):
@@ -117,6 +151,11 @@ class AnalysisPlan(BaseModel):
                 if self.intent.journey_diagnostic_contract
                 else None
             ),
+            "task_kind": self.intent.task_kind.value,
+            "user_goal": self.intent.user_goal,
+            "investigation_steps": [
+                item.model_dump(mode="json") for item in self.intent.investigation_steps
+            ],
             "join_plan": self.join_plan.model_dump() if self.join_plan else None,
             "policy_version": self.policy_version,
             "metric_definition": self.metric_definition.model_dump(mode="json"),

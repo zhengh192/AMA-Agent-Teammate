@@ -150,3 +150,9 @@ These change architecture or security and require owner confirmation:
 - Knowledge direct entries are stored as cited Markdown source versions after approval. Updates preserve the active version until approval; retirement is a separate delete proposal that de-indexes the source only after approval.
 - Installed analysis Skill edits produce a patch version, pass the strict package schema and cross-Skill reference validation, write through temporary files, and hot-reload the existing planner registry. A user-facing delete is a recoverable deprecation version rather than physical history removal.
 - Memory and unapproved proposal deletion erase the stored value or proposal content while retaining a bounded audit envelope. Every destructive control requires an explicit, cancelable confirmation in the administration UI.
+## A-33 - Outcome-first analytical task framing
+
+- Diagnostic language such as why, bad, low, abnormal, degraded, or root cause is interpreted as an investigation goal before selecting a query shape or chart. A metric incident is not reduced to a trend request merely because a line chart can display it.
+- The current request and bounded recent conversation are framed into a typed task kind, user goal, subject, incident date, and clarification state. This task frame is a concise execution plan, not private chain-of-thought, and model output remains schema-validated and non-authoritative.
+- Case-creation diagnosis follows an observable five-step plan: verify the incident against a daily baseline, quantify every Agent-stage shift, drill into symptom, drill into flow step, and only then review bounded response themes. SQL approval, read-only execution, evidence validation, and causal caveats remain unchanged.
+- Deterministic parsing remains a fallback for availability and tests, including English month expressions such as Jul 11th. A task-framing model failure must not silently change the requested outcome.

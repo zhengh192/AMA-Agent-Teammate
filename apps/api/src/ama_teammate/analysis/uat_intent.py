@@ -3,7 +3,13 @@ from __future__ import annotations
 import re
 from datetime import date, timedelta
 
-from ama_teammate.analysis.models import AnalysisIntent, AnalysisKind, ChartKind
+from ama_teammate.analysis.models import (
+    AnalysisIntent,
+    AnalysisKind,
+    AnalysisTaskKind,
+    ChartKind,
+    InvestigationStep,
+)
 
 _SOURCE_MARKERS = (
     "super agent",
@@ -45,6 +51,18 @@ _TREND_MARKERS = (
 )
 _ANOMALY_MARKERS = ("anomaly", "abnormal", "\u5f02\u5e38", "\u7a81\u53d8")
 _JOURNEY_DIAGNOSTIC_MARKERS = (
+    "why",
+    "reason",
+    "bad",
+    "poor",
+    "low",
+    "lower",
+    "decrease",
+    "degraded",
+    "abnormal",
+    "unexpected",
+    "investigate",
+    "diagnose",
     "root cause",
     "rootcause",
     "drop-off",
@@ -160,6 +178,12 @@ def infer_uat_intent(question: str, context: str = "") -> AnalysisIntent | None:
                 "Stage concentration localizes the failure path but does not prove the system root cause.",
                 *time_assumptions,
             ],
+            task_kind=AnalysisTaskKind.DIAGNOSE,
+            user_goal=(
+                "Explain the case-creation incident by measuring the change, then localizing "
+                "where failed sessions increased before considering possible causes."
+            ),
+            investigation_steps=_case_journey_steps(),
         )
     if any(marker in current for marker in _DETAIL_MARKERS):
         start_date, end_date, time_assumptions = _dates(current)
@@ -245,6 +269,41 @@ def _is_journey_diagnostic(current: str, combined: str) -> bool:
         )
     )
     return diagnostic_requested and journey_subject
+
+
+def _case_journey_steps() -> list[InvestigationStep]:
+    return [
+        InvestigationStep(
+            order=1,
+            name="Verify the incident",
+            objective="Compare case creation success on the incident date with a bounded daily baseline.",
+            completion_signal="The size and direction of the success-rate change are quantified.",
+        ),
+        InvestigationStep(
+            order=2,
+            name="Localize the Agent stage",
+            objective="Compare every failed-session Agent-stage bucket with its baseline.",
+            completion_signal="Excess failures and share change are available for every stage.",
+        ),
+        InvestigationStep(
+            order=3,
+            name="Drill into symptom",
+            objective="Within the largest positive stage shift, compare symptom distributions.",
+            completion_signal="The abnormal symptom branch is quantified or the drill-down stops.",
+        ),
+        InvestigationStep(
+            order=4,
+            name="Drill into flow step",
+            objective="Within the selected symptom, compare flow-step distributions.",
+            completion_signal="The abnormal step is quantified or the sample is too small.",
+        ),
+        InvestigationStep(
+            order=5,
+            name="Review bounded response themes",
+            objective="Only after localization, inspect bounded bot responses for the abnormal cohort.",
+            completion_signal="Observed themes are separated from inferred system explanations.",
+        ),
+    ]
 
 
 def _journey_diagnostic_dates(text: str) -> tuple[date, date, list[str]]:
@@ -452,6 +511,8 @@ def _dates(text: str) -> tuple[date, date, list[str]]:
     ):
         parsed.append(date(int(year), int(month), int(day)))
     if not parsed:
+        parsed.extend(_english_month_dates(text, today.year))
+    if not parsed:
         for start_month, start_day, end_month, end_day in re.findall(
             r"(?<!\d)(\d{1,2})(\d{2})\s*[-~\u81f3\u5230]\s*(\d{1,2})(\d{2})(?!\d)",
             text,
@@ -509,6 +570,8 @@ def _explicit_dates(text: str) -> list[date]:
     ):
         parsed.append(date(int(year), int(month), int(day)))
     if not parsed:
+        parsed.extend(_english_month_dates(text, today.year))
+    if not parsed:
         for start_month, start_day, end_month, end_day in re.findall(
             r"(?<!\d)(\d{1,2})(\d{2})\s*[-~\u81f3\u5230]\s*(\d{1,2})(\d{2})(?!\d)",
             text,
@@ -527,3 +590,44 @@ def _explicit_dates(text: str) -> list[date]:
         for month, day in re.findall(r"(?<!\d)(\d{1,2})\u6708(\d{1,2})\u65e5?", text):
             parsed.append(date(today.year, int(month), int(day)))
     return parsed
+
+
+_ENGLISH_MONTHS = {
+    "jan": 1,
+    "january": 1,
+    "feb": 2,
+    "february": 2,
+    "mar": 3,
+    "march": 3,
+    "apr": 4,
+    "april": 4,
+    "may": 5,
+    "jun": 6,
+    "june": 6,
+    "jul": 7,
+    "july": 7,
+    "aug": 8,
+    "august": 8,
+    "sep": 9,
+    "sept": 9,
+    "september": 9,
+    "oct": 10,
+    "october": 10,
+    "nov": 11,
+    "november": 11,
+    "dec": 12,
+    "december": 12,
+}
+
+
+def _english_month_dates(text: str, default_year: int) -> list[date]:
+    month_pattern = "|".join(sorted(_ENGLISH_MONTHS, key=len, reverse=True))
+    matches = re.findall(
+        rf"\b({month_pattern})\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?(?:,?\s+(20\d{{2}}))?\b",
+        text,
+        flags=re.IGNORECASE,
+    )
+    return [
+        date(int(year) if year else default_year, _ENGLISH_MONTHS[month.casefold()], int(day))
+        for month, day, year in matches
+    ]

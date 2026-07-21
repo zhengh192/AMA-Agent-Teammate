@@ -375,15 +375,20 @@ async def test_case_journey_planning_retrieves_skill_and_compiles_session_safe_s
     assert "$[last].agent_type" in sql
     assert "AS symptom" in sql
     assert "AS flow_step" in sql
-    assert "GROUP BY comparison_date, comparison_window, outcome, agent_stage, symptom, flow_step" in sql
+    assert (
+        "GROUP BY comparison_date, comparison_window, outcome, agent_stage, symptom, flow_step"
+        in sql
+    )
     assert any(
         item["skill"]["id"] == "case_journey_diagnostics" for item in plan["skill_execution_plan"]
     )
     assert "COUNT(session_id) AS value" in sql
     assert plan["response_language"] == "zh-CN"
-    assert [
-        item["key"] for item in plan["journey_diagnostic_contract"]["hierarchy"]
-    ] == ["agent_stage", "symptom", "flow_step"]
+    assert [item["key"] for item in plan["journey_diagnostic_contract"]["hierarchy"]] == [
+        "agent_stage",
+        "symptom",
+        "flow_step",
+    ]
     journey_skill = next(
         item["skill"]
         for item in plan["skill_execution_plan"]
@@ -418,3 +423,23 @@ async def test_non_visit_queries_inherit_visit_population_rule(
     assert "session_id IN (SELECT traffic_scope.session_id FROM visit_log" in sql
     assert "traffic_scope.source = 'pcs-redirect'" in sql
     assert "traffic_scope.channel" in sql
+
+
+@pytest.mark.asyncio
+async def test_english_case_rate_why_request_builds_diagnostic_plan(
+    client: TestClient,
+) -> None:
+    plan = await _plan(
+        client,
+        "why the performance of case creation rate on Jul 11th so bad",
+    )
+
+    query = plan["queries"][0]
+    assert plan["analysis_type"] == "journey_diagnostic"
+    assert plan["task_kind"] == "diagnose"
+    assert query["parameters"]["start_date"] == "2026-07-08"
+    assert query["parameters"]["incident_start"] == "2026-07-11"
+    assert query["parameters"]["end_date"] == "2026-07-12"
+    assert "comparison_window" in query["sql"]
+    assert "agent_stage" in query["sql"]
+    assert [item["order"] for item in plan["investigation_steps"]] == [1, 2, 3, 4, 5]

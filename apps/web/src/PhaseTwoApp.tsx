@@ -507,6 +507,19 @@ export default function PhaseTwoApp() {
             <p className="approval-intro">
               我理解你想看 <strong>{approval.plan.metric}</strong>。我会按
               {" "}{approval.plan.analysis_type.replaceAll("_", " ")} 来计算，
+            {approval.plan.investigation_steps?.length ? (
+              <div className="assumption-panel">
+                <strong>{approval.plan.user_goal || approval.plan.goal}</strong>
+                <ol>
+                  {approval.plan.investigation_steps.map((step) => (
+                    <li key={step.order}>
+                      <strong>{step.name}</strong>
+                      <p>{step.objective}</p>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            ) : null}
               结果用 {approval.plan.chart_type.replaceAll("_", " ")} 呈现。
             </p>
             {approval.plan.metadata_confidence === "working_assumption" ? (

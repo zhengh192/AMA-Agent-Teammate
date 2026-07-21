@@ -20,6 +20,14 @@ export interface AnalysisPlanView {
   dimensions: string[];
   chart_type: string;
   success_criteria: string;
+  task_kind?: string;
+  user_goal?: string;
+  investigation_steps?: Array<{
+    order: number;
+    name: string;
+    objective: string;
+    completion_signal: string;
+  }>;
   metadata_confidence: "authoritative" | "working_assumption" | "learned_definition";
   assumptions: string[];
   response_language?: "en" | "zh-CN";

@@ -156,3 +156,32 @@ def test_low_day_followup_reuses_case_context_for_journey_diagnostic() -> None:
     assert intent.analysis_type.value == "journey_diagnostic"
     assert intent.start_date == f"{date.today().year}-07-15"
     assert intent.end_date == f"{date.today().year}-07-19"
+
+
+def test_english_why_and_ordinal_date_trigger_case_journey_diagnostic() -> None:
+    intent = infer_uat_intent("why the performance of case creation rate on Jul 11th so bad")
+
+    assert intent is not None
+    assert intent.analysis_type.value == "journey_diagnostic"
+    assert intent.task_kind.value == "diagnose"
+    assert intent.start_date == f"{date.today().year}-07-08"
+    assert intent.end_date == f"{date.today().year}-07-12"
+    assert [step.name for step in intent.investigation_steps] == [
+        "Verify the incident",
+        "Localize the Agent stage",
+        "Drill into symptom",
+        "Drill into flow step",
+        "Review bounded response themes",
+    ]
+
+
+def test_english_abnormal_followup_preserves_prior_diagnostic_goal() -> None:
+    context = """<conversation_history>
+[USER] why the performance of case creation rate on Jul 11th so bad
+</conversation_history>"""
+    intent = infer_uat_intent("case creation rate abnormal on july 11th", context)
+
+    assert intent is not None
+    assert intent.analysis_type.value == "journey_diagnostic"
+    assert intent.start_date == f"{date.today().year}-07-08"
+    assert intent.end_date == f"{date.today().year}-07-12"

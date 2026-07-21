@@ -68,6 +68,8 @@ class AzureOpenAIProvider:
             model=profile.deployment,
             input=api_input,
             text_format=request.schema,
+            reasoning={"effort": self.settings.azure_openai_reasoning_effort},
+            max_output_tokens=self.settings.azure_openai_max_output_tokens,
         )
         parsed = getattr(response, "output_parsed", None)
         if not isinstance(parsed, request.schema):
