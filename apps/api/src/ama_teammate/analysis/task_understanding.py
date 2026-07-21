@@ -18,7 +18,11 @@ metric and incident date, establish the change against a baseline, localize cont
 or journey stages, and only then inspect deeper evidence. A chart is an output format, never the
 task goal. Do not generate SQL, answer the question, expose chain-of-thought, invent fields, or
 claim that data was queried. Ask for clarification only when the intended outcome or incident is
-materially ambiguous."""
+materially ambiguous. Build observable investigation_steps with completion signals. Select SQL
+for bounded retrieval, controlled_analysis for deterministic calculations, and python_sandbox only
+when a bounded intermediate dataset needs transformations that SQL or the controlled library cannot
+express clearly. Prefer acting on a reasonable, labeled interpretation over asking the user to
+translate natural language into field syntax."""
 
 
 class TaskUnderstandingService:
@@ -32,10 +36,8 @@ class TaskUnderstandingService:
         skill_context: list[dict[str, Any]],
     ) -> AnalysisTaskUnderstanding | None:
         deterministic = _case_diagnostic_frame(question, context)
-        if deterministic is not None:
-            return deterministic
         if self.providers.provider.name == "mock" or not _needs_semantic_framing(question, context):
-            return None
+            return deterministic
         generated = await self.providers.provider.generate_structured(
             [
                 ProviderMessage(role="developer", content=TASK_UNDERSTANDING_INSTRUCTIONS),
@@ -135,4 +137,37 @@ def _case_diagnostic_frame(question: str, context: str) -> AnalysisTaskUnderstan
         ),
         subject="Case Creation Rate",
         is_follow_up=bool(context.strip()),
+        investigation_steps=[
+            {
+                "order": 1,
+                "name": "Quantify incident versus baseline",
+                "objective": "Measure the rate and failed-session change before drilling down.",
+                "completion_signal": "The absolute and percentage-point changes are known.",
+            },
+            {
+                "order": 2,
+                "name": "Compare Agent stages",
+                "objective": "Quantify excess failed sessions at every Agent stage.",
+                "completion_signal": "The Agent stage with the largest excess is identified.",
+            },
+            {
+                "order": 3,
+                "name": "Compare symptoms",
+                "objective": "Within the selected Agent stage, quantify symptom changes.",
+                "completion_signal": "The symptom with the largest positive excess is identified.",
+            },
+            {
+                "order": 4,
+                "name": "Compare flow steps",
+                "objective": "Within the selected symptom, quantify flow-step changes.",
+                "completion_signal": "The flow step with the largest positive excess is identified.",
+            },
+            {
+                "order": 5,
+                "name": "Review bounded response evidence",
+                "objective": "Inspect response patterns only inside the localized cohorts.",
+                "completion_signal": "Observed patterns and remaining unknowns are separated.",
+            },
+        ],
+        preferred_tools=["sql", "controlled_analysis"],
     )

@@ -138,7 +138,11 @@ class AnalysisSkillRegistry:
         self, analysis_kind: AnalysisKind, question: str
     ) -> list[SkillExecutionStep]:
         target_ids = _INTENT_SKILLS[analysis_kind]
-        candidates = [item.metadata.id for item in self.search(question, SkillStatus.ACTIVE)]
+        candidates = [
+            item.metadata.id
+            for item in self.search(question, SkillStatus.ACTIVE)
+            if _strong_execution_match(question, item)
+        ]
         ordered_ids: list[str] = []
 
         def add_with_prerequisites(skill_id: str) -> None:
@@ -156,8 +160,7 @@ class AnalysisSkillRegistry:
         for skill_id in target_ids:
             add_with_prerequisites(skill_id)
         for skill_id in candidates:
-            if skill_id in target_ids:
-                add_with_prerequisites(skill_id)
+            add_with_prerequisites(skill_id)
         return [
             SkillExecutionStep(
                 order=index,
@@ -294,6 +297,44 @@ _INTENT_SKILLS: dict[AnalysisKind, list[str]] = {
         "analysis_reporting",
     ],
 }
+
+
+def _strong_execution_match(question: str, package: SkillPackage) -> bool:
+    stopwords = {
+        "analysis",
+        "analyze",
+        "data",
+        "metric",
+        "query",
+        "result",
+        "chart",
+        "calculate",
+        "please",
+        "from",
+        "with",
+        "this",
+        "that",
+    }
+    tokens = {token for token in _tokens(question) if len(token) > 1 and token not in stopwords}
+    metadata = package.metadata
+    haystack = " ".join(
+        [
+            metadata.id,
+            metadata.name,
+            metadata.description,
+            *metadata.aliases,
+            *metadata.trigger_examples.en,
+            *metadata.trigger_examples.zh,
+        ]
+    ).casefold()
+    score = sum(1 for token in tokens if token in haystack)
+    normalized_query = question.casefold()
+    named_terms = [
+        metadata.id.replace("_", " "),
+        metadata.name.casefold(),
+        *(alias.casefold() for alias in metadata.aliases),
+    ]
+    return score >= 2 or any(len(term) >= 4 and term in normalized_query for term in named_terms)
 
 
 def _semver(value: str) -> tuple[int, int, int]:

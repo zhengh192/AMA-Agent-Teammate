@@ -48,3 +48,15 @@ A failed prerequisite stops its dependent Skill. Missing or ambiguous metric, pe
 baseline, or entity definition returns clarification. Low or unusable data confidence caps the
 strength of conclusions. Contributions, decompositions, correlations, and calendar patterns are
 not causal proof.
+## Method-oriented selection
+
+The planner always includes the deterministic foundation Skills for the selected analysis kind. It may additionally select an active Skill when the user's goal strongly matches that package's name, aliases, trigger examples, or instructions. Generic words such as data, analysis, metric, query, or chart are not sufficient to activate an extra package.
+
+Selected Skill instructions are supplied to task framing and loop review as untrusted method context. A Skill should describe:
+
+- the outcome it helps achieve;
+- observable checkpoints and completion signals;
+- preferred tools and bounded inputs;
+- stopping conditions and important caveats.
+
+It should not be a rigid SQL template. SQL remains generated from the current question, live allowlisted schema, semantic metadata, and the current bounded observation.

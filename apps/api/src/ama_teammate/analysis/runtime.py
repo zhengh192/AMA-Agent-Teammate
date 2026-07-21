@@ -2,12 +2,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from ama_teammate.analysis.agent_loop import BoundedAnalysisLoop
 from ama_teammate.analysis.artifacts import CSVArtifactWriter
 from ama_teammate.analysis.charts import ChartBuilder, PlotlySpecValidator
 from ama_teammate.analysis.engine import ControlledAnalysisEngine
 from ama_teammate.analysis.join import BoundedDuckDBJoiner
 from ama_teammate.analysis.json_artifacts import JSONArtifactStore
 from ama_teammate.analysis.planner import AnalysisPlanner
+from ama_teammate.analysis.python_sandbox import (
+    DisabledPythonSandbox,
+    DockerPythonSandbox,
+)
 from ama_teammate.analysis_skills.registry import AnalysisSkillRegistry
 from ama_teammate.config import Settings
 from ama_teammate.data_access.base import ReadOnlyConnector
@@ -87,6 +92,20 @@ async def create_analysis_runtime(
         skill_registry,
         learned_metrics,
     )
+    analysis_loop = BoundedAnalysisLoop(
+        providers,
+        max_iterations=(
+            settings.ama_analysis_loop_max_iterations if settings.ama_analysis_loop_enabled else 1
+        ),
+    )
+    python_sandbox = (
+        DockerPythonSandbox(
+            image=settings.ama_python_sandbox_image,
+            timeout_seconds=settings.ama_python_sandbox_timeout_seconds,
+        )
+        if settings.ama_python_sandbox_enabled
+        else DisabledPythonSandbox()
+    )
     service = AnalysisService(
         planner=planner,
         registry=registry,
@@ -99,5 +118,7 @@ async def create_analysis_runtime(
         evidence_validator=EvidenceValidator(),
         csv_writer=CSVArtifactWriter(settings.ama_artifact_root),
         json_store=JSONArtifactStore(settings.ama_artifact_root),
+        analysis_loop=analysis_loop,
+        python_sandbox=python_sandbox,
     )
     return AnalysisRuntime(registry=registry, service=service)

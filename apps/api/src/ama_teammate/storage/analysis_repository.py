@@ -78,6 +78,44 @@ class AnalysisRepository:
             await session.commit()
         return plan_row, approval
 
+    async def revise_plan_with_approval(
+        self,
+        plan: AnalysisPlan,
+        requester_id: str,
+    ) -> tuple[AnalysisPlanRow, ApprovalRow]:
+        now = utc_now()
+        payload_json = canonical_json(plan.approval_payload())
+        approval = ApprovalRow(
+            id=new_id(),
+            run_id=plan.run_id,
+            action_type="execute_readonly_analysis_plan",
+            payload_hash=hash_text(payload_json),
+            policy_version=plan.policy_version,
+            requester_id=requester_id,
+            approver_id=None,
+            status=ApprovalStatus.PENDING.value,
+            comment=None,
+            created_at=now,
+            decided_at=None,
+            expires_at=None,
+        )
+        query_rows = [self._query_row(plan.id, query, now) for query in plan.queries]
+        async with self.database.sessions() as session:
+            plan_row = await session.get(AnalysisPlanRow, plan.id)
+            if plan_row is None or plan_row.run_id != plan.run_id:
+                raise ValueError("Analysis plan revision target was not found")
+            plan_row.question_hash = hash_text(plan.question)
+            plan_row.goal = plan.goal
+            plan_row.analysis_type = plan.intent.analysis_type.value
+            plan_row.chart_type = plan.intent.chart_type.value
+            plan_row.plan_json = plan.model_dump_json()
+            plan_row.policy_version = plan.policy_version
+            plan_row.status = "waiting_approval"
+            plan_row.updated_at = now
+            session.add_all([approval, *query_rows])
+            await session.commit()
+            return plan_row, approval
+
     async def get_plan(self, plan_id: str) -> AnalysisPlan | None:
         async with self.database.sessions() as session:
             row = await session.get(AnalysisPlanRow, plan_id)
@@ -86,7 +124,10 @@ class AnalysisRepository:
     async def get_plan_for_run(self, run_id: str) -> AnalysisPlan | None:
         async with self.database.sessions() as session:
             row = await session.scalar(
-                select(AnalysisPlanRow).where(AnalysisPlanRow.run_id == run_id)
+                select(AnalysisPlanRow)
+                .where(AnalysisPlanRow.run_id == run_id)
+                .order_by(AnalysisPlanRow.created_at.desc())
+                .limit(1)
             )
             return AnalysisPlan.model_validate_json(row.plan_json) if row else None
 
@@ -128,7 +169,10 @@ class AnalysisRepository:
             row.comment = comment
             row.decided_at = utc_now()
             plan_row = await session.scalar(
-                select(AnalysisPlanRow).where(AnalysisPlanRow.run_id == row.run_id)
+                select(AnalysisPlanRow)
+                .where(AnalysisPlanRow.run_id == row.run_id)
+                .order_by(AnalysisPlanRow.created_at.desc())
+                .limit(1)
             )
             if plan_row is not None:
                 plan_row.status = status.value
@@ -284,7 +328,10 @@ class AnalysisRepository:
     async def get_result_artifact_for_run(self, run_id: str) -> ArtifactRow | None:
         async with self.database.sessions() as session:
             row = await session.scalar(
-                select(AnalysisResultRow).where(AnalysisResultRow.run_id == run_id)
+                select(AnalysisResultRow)
+                .where(AnalysisResultRow.run_id == run_id)
+                .order_by(AnalysisResultRow.created_at.desc())
+                .limit(1)
             )
             return await session.get(ArtifactRow, row.result_artifact_id) if row else None
 

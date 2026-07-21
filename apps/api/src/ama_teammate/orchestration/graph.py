@@ -8,6 +8,7 @@ from langgraph.types import Command
 
 from ama_teammate.orchestration.analysis_nodes import (
     build_analysis_node_functions,
+    route_after_analysis_review,
     route_after_approval,
     stop_analysis_node,
 )
@@ -59,20 +60,37 @@ def build_graph(
         "prepare_response": "prepare_response",
     }
     if analysis_service is not None:
-        create_plan, approve_sql, execute_analysis = build_analysis_node_functions(analysis_service)
+        (
+            create_plan,
+            approve_sql,
+            execute_step,
+            review_step,
+            create_followup,
+            finalize_analysis,
+        ) = build_analysis_node_functions(analysis_service)
         analysis_builder = StateGraph(AgentState)
         analysis_builder.add_node("create_analysis_plan", create_plan)
         analysis_builder.add_node("sql_approval", approve_sql)
-        analysis_builder.add_node("execute_analysis", execute_analysis)
+        analysis_builder.add_node("execute_analysis_step", execute_step)
+        analysis_builder.add_node("review_analysis_step", review_step)
+        analysis_builder.add_node("create_followup_plan", create_followup)
+        analysis_builder.add_node("finalize_analysis", finalize_analysis)
         analysis_builder.add_node("stop_analysis", stop_analysis_node)
         analysis_builder.add_edge(START, "create_analysis_plan")
         analysis_builder.add_edge("create_analysis_plan", "sql_approval")
         analysis_builder.add_conditional_edges(
             "sql_approval",
             route_after_approval,
-            {"execute": "execute_analysis", "stop": "stop_analysis"},
+            {"execute": "execute_analysis_step", "stop": "stop_analysis"},
         )
-        analysis_builder.add_edge("execute_analysis", END)
+        analysis_builder.add_edge("execute_analysis_step", "review_analysis_step")
+        analysis_builder.add_conditional_edges(
+            "review_analysis_step",
+            route_after_analysis_review,
+            {"continue": "create_followup_plan", "finish": "finalize_analysis"},
+        )
+        analysis_builder.add_edge("create_followup_plan", "sql_approval")
+        analysis_builder.add_edge("finalize_analysis", END)
         analysis_builder.add_edge("stop_analysis", END)
         builder.add_node("analysis", analysis_builder.compile())
         builder.add_edge("analysis", END)

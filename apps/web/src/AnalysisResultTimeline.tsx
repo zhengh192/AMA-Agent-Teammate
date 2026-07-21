@@ -26,8 +26,9 @@ function formatNumber(value: number) {
 export function AnalysisResultTimeline({ result }: AnalysisResultTimelineProps) {
   const finalDataset = result.datasets.at(-1) ?? null;
   const chinese = result.computation.summary.response_language === "zh-CN";
+  const evidence = result.evidence ?? result.computation.evidence;
   const evidenceLabels = new Map(
-    result.computation.evidence.map((item, index) => [item.id, index + 1]),
+    evidence.map((item, index) => [item.id, index + 1]),
   );
   const diagnosticHierarchy = Array.isArray(result.computation.summary.hierarchy)
     ? result.computation.summary.hierarchy as DiagnosticLevel[]
@@ -146,10 +147,33 @@ export function AnalysisResultTimeline({ result }: AnalysisResultTimelineProps) 
           <pre>{JSON.stringify(result.join_quality, null, 2)}</pre>
         </article>
       ) : null}
+      {result.loop_observations?.length ? (
+        <article className="analysis-card">
+          <h3>{chinese ? "这次分析怎么推进的" : "Analysis progress"}</h3>
+          <ol>
+            {result.loop_observations.map((observation, index) => (
+              <li key={index + "-" + observation}>{observation}</li>
+            ))}
+          </ol>
+        </article>
+      ) : null}
+      {result.learning_candidates?.length ? (
+        <article className="analysis-card">
+          <h3>{chinese ? "建议沉淀（尚未生效）" : "Learning suggestions (not active)"}</h3>
+          <div className="evidence-list">
+            {result.learning_candidates.map((candidate, index) => (
+              <details key={candidate.kind + "-" + candidate.source_step + "-" + index}>
+                <summary>{candidate.kind} · {candidate.title}</summary>
+                <p>{candidate.proposal}</p>
+              </details>
+            ))}
+          </div>
+        </article>
+      ) : null}
       <article className="analysis-card">
         <h3>{chinese ? "依据明细" : "Evidence records"}</h3>
         <div className="evidence-list">
-          {result.computation.evidence.map((item) => (
+          {evidence.map((item) => (
             <details key={item.id}>
               <summary>{(chinese ? "依据 " : "Evidence ") + evidenceLabels.get(item.id)} · {epistemicLabel(item.epistemic_label)} · {item.title}</summary>
               <p>{item.calculation}</p>

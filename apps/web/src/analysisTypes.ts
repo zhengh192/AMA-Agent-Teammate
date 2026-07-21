@@ -118,6 +118,14 @@ export interface AnalysisResult {
     fallback_table: boolean;
   };
   csv_artifact_id: string;
+  evidence?: EvidenceRecord[];
+  loop_observations?: string[];
+  learning_candidates?: Array<{
+    kind: "knowledge" | "skill" | "memory";
+    title: string;
+    proposal: string;
+    source_step: number;
+  }>;
 }
 
 export type AnalysisEventHandler = (event: ServerEvent) => void;
