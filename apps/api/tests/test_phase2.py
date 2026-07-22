@@ -128,6 +128,29 @@ def test_sql_ast_gateway_rejects_write_and_bypass(
     assert caught.value.code == code
 
 
+def test_sql_ast_gateway_accepts_read_only_union() -> None:
+    source = demo_source_configs()[0]
+    proposal = QueryProposal(
+        id="union-proposal",
+        source_id=source.id,
+        sql=(
+            "SELECT sale_date AS period, revenue AS value FROM daily_sales "
+            "UNION ALL "
+            "SELECT sale_date AS period, revenue AS value FROM daily_sales"
+        ),
+        parameters={},
+        purpose="read-only set operation",
+        max_rows=100,
+        max_result_bytes=10_000,
+        timeout_seconds=5,
+    )
+
+    validated = SQLSafetyGateway().validate(proposal, source)
+
+    assert "UNION ALL" in validated.normalized_sql
+    assert validated.referenced_tables == ["daily_sales"]
+
+
 def test_single_database_metric_approval_execution_chart_evidence_and_csv(
     client: TestClient,
 ) -> None:

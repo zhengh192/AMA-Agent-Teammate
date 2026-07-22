@@ -134,8 +134,46 @@ class AnalysisSkillRegistry:
             item for _, item in sorted(results, key=lambda pair: (-pair[0], pair[1].metadata.id))
         ]
 
+    def runtime_context(
+        self, question: str, *, limit: int = 6, include_instructions: bool = False
+    ) -> list[dict[str, Any]]:
+        selected: list[SkillPackage] = []
+        for package in self.search(question, SkillStatus.ACTIVE):
+            if package not in selected:
+                selected.append(package)
+        for skill_id in (
+            "metric_query",
+            "data_quality_check",
+            "analysis_reporting",
+        ):
+            try:
+                package = self.get(skill_id)
+            except LookupError:
+                continue
+            if self._effective(package.metadata) and package not in selected:
+                selected.append(package)
+        return [
+            {
+                "id": package.metadata.id,
+                "name": package.metadata.name,
+                "version": package.metadata.version,
+                "description": package.metadata.description,
+                "aliases": package.metadata.aliases,
+                "trigger_examples": package.metadata.trigger_examples.model_dump(),
+                "analysis_intents": package.metadata.analysis_intents,
+                "inputs": [item.model_dump(mode="json") for item in package.metadata.inputs],
+                "outputs": [item.model_dump(mode="json") for item in package.metadata.outputs],
+                "deterministic_operations": package.metadata.deterministic_operations,
+                **({"instructions": package.instructions[:12_000]} if include_instructions else {}),
+            }
+            for package in selected[:limit]
+        ]
+
     def build_execution_plan(
-        self, analysis_kind: AnalysisKind, question: str
+        self,
+        analysis_kind: AnalysisKind,
+        question: str,
+        recommended_skill_ids: list[str] | None = None,
     ) -> list[SkillExecutionStep]:
         target_ids = _INTENT_SKILLS[analysis_kind]
         candidates = [item.metadata.id for item in self.search(question, SkillStatus.ACTIVE)]
@@ -158,6 +196,10 @@ class AnalysisSkillRegistry:
         for skill_id in candidates:
             if skill_id in target_ids:
                 add_with_prerequisites(skill_id)
+        for skill_id in self._explicitly_named_skill_ids(question):
+            add_with_prerequisites(skill_id)
+        for skill_id in recommended_skill_ids or []:
+            add_with_prerequisites(skill_id)
         return [
             SkillExecutionStep(
                 order=index,
@@ -177,6 +219,21 @@ class AnalysisSkillRegistry:
             for index, skill_id in enumerate(ordered_ids, 1)
             for package in [self.get(skill_id)]
         ]
+
+    def _explicitly_named_skill_ids(self, question: str) -> list[str]:
+        normalized_question = _normalized_phrase(question)
+        matched: list[str] = []
+        for package in self.list_packages(SkillStatus.ACTIVE):
+            metadata = package.metadata
+            names = [metadata.id.replace("_", " "), metadata.name, *metadata.aliases]
+            if any(
+                (normalized := _normalized_phrase(name))
+                and len(normalized) >= 4
+                and normalized in normalized_question
+                for name in names
+            ):
+                matched.append(metadata.id)
+        return matched
 
     def _reference_issues(self) -> list[SkillValidationIssue]:
         issues: list[SkillValidationIssue] = []
@@ -301,8 +358,14 @@ def _semver(value: str) -> tuple[int, int, int]:
     return int(major), int(minor), int(patch)
 
 
+def _normalized_phrase(value: str) -> str:
+    return " ".join(
+        "".join(character.lower() if character.isalnum() else " " for character in value).split()
+    )
+
+
 def _tokens(value: str) -> set[str]:
-    normalized = "".join(character.lower() if character.isalnum() else " " for character in value)
+    normalized = _normalized_phrase(value)
     return {token for token in normalized.split() if len(token) > 1} | {
         character for character in value if "\u4e00" <= character <= "\u9fff"
     }

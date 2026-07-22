@@ -262,6 +262,14 @@ class AnalysisService:
                 result_bytes=execution.result_bytes,
                 duration_ms=execution.duration_ms,
             )
+            quality = assess_dataset_quality(execution.rows, execution.columns)
+            if execution.truncated:
+                reason = (execution.truncation_reason or "configured limit").replace("_", " ")
+                quality.warnings.append(
+                    "The returned detail rows were bounded by the local POC "
+                    f"{reason}; aggregate conclusions must come from a separate complete "
+                    "aggregate query."
+                )
             dataset = Dataset(
                 id=new_id(),
                 source_ids=[query.source_id],
@@ -270,7 +278,9 @@ class AnalysisService:
                 rows=execution.rows,
                 row_count=execution.row_count,
                 result_bytes=execution.result_bytes,
-                quality=assess_dataset_quality(execution.rows, execution.columns),
+                quality=quality,
+                truncated=execution.truncated,
+                truncation_reason=execution.truncation_reason,
             )
             await self.analysis_repository.add_dataset(plan.run_id, dataset, None)
             datasets.append(dataset)
@@ -287,6 +297,8 @@ class AnalysisService:
                     "rows": execution.row_count,
                     "result_bytes": execution.result_bytes,
                     "duration_ms": round(execution.duration_ms, 3),
+                    "truncated": execution.truncated,
+                    "truncation_reason": execution.truncation_reason,
                 },
             )
 

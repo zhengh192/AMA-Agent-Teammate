@@ -5,6 +5,7 @@ import re
 
 from ama_teammate.analysis.models import AnalysisIntent, AnalysisKind, ChartKind
 from ama_teammate.analysis.uat_intent import parse_uat_dates
+from ama_teammate.analysis_skills.registry import AnalysisSkillRegistry
 from ama_teammate.data_access.models import DataSourceConfig, TableCatalog
 from ama_teammate.data_access.registry import ConnectorRegistry
 from ama_teammate.learned_metrics.models import (
@@ -48,12 +49,20 @@ class AdHocQueryInterpreter:
         providers: ProviderBundle,
         registry: ConnectorRegistry,
         learned_metrics: LearnedMetricService | None,
+        skill_registry: AnalysisSkillRegistry | None = None,
     ) -> None:
         self.providers = providers
         self.registry = registry
         self.learned_metrics = learned_metrics
+        self.skill_registry = skill_registry
 
-    async def infer(self, question: str, context: str) -> AnalysisIntent | None:
+    async def infer(
+        self,
+        question: str,
+        context: str,
+        *,
+        planning_context: dict[str, object] | None = None,
+    ) -> AnalysisIntent | None:
         source = self.registry.config("super_agent_uat")
         if not self._looks_like_request(source, question):
             return None
@@ -61,11 +70,18 @@ class AdHocQueryInterpreter:
         if request is None:
             if self.providers.provider.name == "mock":
                 return None
-            request = await self._model_request(source, question, context)
+            request = await self._model_request(
+                source, question, context, planning_context=planning_context
+            )
         return self._to_intent(source, request, question)
 
     async def _model_request(
-        self, source: DataSourceConfig, question: str, context: str
+        self,
+        source: DataSourceConfig,
+        question: str,
+        context: str,
+        *,
+        planning_context: dict[str, object] | None = None,
     ) -> AdHocQueryRequest:
         catalog = {
             table_name: [
@@ -85,6 +101,7 @@ class AdHocQueryInterpreter:
                                 "current_request": question,
                                 "conversation_context": context[-8_000:],
                                 "catalog": catalog,
+                                "approved_planning_context": planning_context or {},
                                 "known_business_mappings": {
                                     "CID session": "visit_log.is_cid = '1'",
                                     "case created": ("visit_log.eticket_case_number IS NOT NULL"),

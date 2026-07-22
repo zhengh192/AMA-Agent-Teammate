@@ -72,6 +72,7 @@ class CatalogOnlyConnector:
                         ColumnCatalog(name="start_time", data_type="datetime"),
                         ColumnCatalog(name="intent_type", data_type="varchar"),
                         ColumnCatalog(name="bot_thinking", data_type="json"),
+                        ColumnCatalog(name="bot_response", data_type="text"),
                         ColumnCatalog(name="symptom", data_type="varchar"),
                         ColumnCatalog(name="flow_id", data_type="varchar"),
                         ColumnCatalog(name="flow_step", data_type="varchar"),
@@ -372,9 +373,19 @@ async def test_case_journey_planning_retrieves_skill_and_compiles_session_safe_s
     assert "PARTITION BY t.session_id" in sql
     assert "eticket_case_number" in sql
     assert "msd_case_number" in sql
-    assert "$[last].agent_type" in sql
+    assert "$[-1].agent_type" in sql
+    assert "$[last].agent_type" not in sql
     assert "AS symptom" in sql
     assert "AS flow_step" in sql
+    assert "AS bot_response" in sql
+    assert "AS bot_response_1" in sql
+    assert "AS bot_response_5" not in sql
+    assert "'distribution' AS record_type" in sql
+    assert "'response_evidence' AS record_type" in sql
+    assert "evidence_rank <= 5" in sql
+    assert "WHERE evidence_rank <= 5" in sql
+    assert "journey_counts AS" in sql
+    assert "distribution AS" not in sql
     assert (
         "GROUP BY comparison_date, comparison_window, outcome, agent_stage, symptom, flow_step"
         in sql
@@ -394,7 +405,7 @@ async def test_case_journey_planning_retrieves_skill_and_compiles_session_safe_s
         for item in plan["skill_execution_plan"]
         if item["skill"]["id"] == "case_journey_diagnostics"
     )
-    assert journey_skill["version"] == "1.1.0"
+    assert journey_skill["version"] == "1.2.0"
     assert "source = 'pcs-redirect'" in sql
     assert plan["business_rule_definitions"] == [
         {

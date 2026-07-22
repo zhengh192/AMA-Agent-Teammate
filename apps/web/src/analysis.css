@@ -1,5 +1,5 @@
 .phase-two-workspace { grid-template-rows: auto minmax(0, 1fr) auto auto auto; }
-.analysis-card, .analysis-results { width: min(1080px, calc(100% - 40px)); margin: 0 auto 18px; }
+.analysis-card, .analysis-results { width: min(1080px, calc(100% - 40px)); min-width: 0; margin: 0 auto 18px; }
 .analysis-card { background: #fff; border: 1px solid #dfe5eb; border-radius: 12px; padding: 18px; box-shadow: 0 8px 24px rgb(30 45 60 / 5%); }
 .analysis-card h2, .analysis-card h3, .analysis-results h2 { margin: 0; color: #1e2b39; }
 .card-heading, .result-toolbar { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
@@ -20,9 +20,10 @@ pre { max-width: 100%; overflow: auto; background: #f5f7f9; border-radius: 8px; 
 .hash { display: block; margin-top: 10px; color: #8290a0; }
 .analysis-results { display: grid; gap: 14px; }
 .result-toolbar { align-items: center; }
-.result-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(280px, .7fr); gap: 14px; }
+.result-grid { display: grid; min-width: 0; grid-template-columns: minmax(0, 1.3fr) minmax(280px, .7fr); gap: 14px; }
 .result-grid .analysis-card, .analysis-results > .analysis-card { width: auto; margin: 0; }
-.plotly-chart { width: 100%; min-height: 360px; }
+.chart-card { min-width: 0; overflow: hidden; }
+.plotly-chart { width: 100%; min-width: 0; max-width: 100%; min-height: 360px; overflow: hidden; }
 .conclusion { padding: 12px 0; border-bottom: 1px solid #e5e9ee; }
 .conclusion p { margin: 7px 0; line-height: 1.5; }
 .label { display: inline-block; border-radius: 999px; padding: 3px 7px; background: #e6f7ec; color: #216d3e; font-size: 11px; font-weight: 700; }
@@ -31,11 +32,17 @@ pre { max-width: 100%; overflow: auto; background: #f5f7f9; border-radius: 8px; 
 .table-scroll { max-height: 430px; overflow: auto; margin-top: 12px; border: 1px solid #e1e6eb; border-radius: 8px; }
 table { width: 100%; border-collapse: collapse; font-size: 12px; }
 th, td { padding: 9px 10px; border-bottom: 1px solid #e6eaee; text-align: left; white-space: nowrap; }
+.long-text-cell { min-width: 260px; max-width: 520px; white-space: normal; overflow-wrap: anywhere; line-height: 1.45; }
+.muted { color: #6f7f90; line-height: 1.5; }
+.response-window-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+.response-window-grid h4 { margin: 0 0 8px; color: #33495d; }
+.response-sample { margin-bottom: 8px; }
+.response-sample p { max-height: 10em; overflow: auto; margin: 10px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; color: #27394b; line-height: 1.55; }
 th { position: sticky; top: 0; background: #f2f5f7; color: #4c5e70; }
 .warning { color: #8a5e10; background: #fff8e6; border-radius: 7px; padding: 8px 10px; font-size: 12px; }
 .evidence-list { display: grid; gap: 8px; margin-top: 12px; }
 .error-banner p { margin: 5px 0 0; }
-@media (max-width: 850px) { .plan-grid { grid-template-columns: 1fr 1fr; } .result-grid { grid-template-columns: 1fr; } }
+@media (max-width: 850px) { .plan-grid { grid-template-columns: 1fr 1fr; } .result-grid, .response-window-grid { grid-template-columns: 1fr; } }
 @media (max-width: 560px) { .plan-grid { grid-template-columns: 1fr; } .sql-review > div, .result-toolbar { display: block; } .download { display: inline-block; margin-top: 10px; } }
 .assumption-panel {
   margin: 14px 0;

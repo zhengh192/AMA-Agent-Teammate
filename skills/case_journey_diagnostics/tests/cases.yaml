@@ -9,7 +9,8 @@ positive:
     expect:
       - bounded_last_responses
       - untrusted_text
-      - theme_distribution
+      - incident_baseline_examples
+      - deepest_reliable_level
 negative:
   - input: The last bot response proves PD was down.
     expect:

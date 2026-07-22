@@ -84,6 +84,8 @@ class QueryExecutionResult(BaseModel):
     row_count: int
     result_bytes: int
     duration_ms: float
+    truncated: bool = False
+    truncation_reason: Literal["row_limit", "byte_limit"] | None = None
 
 
 class QueryExecutionFailure(RuntimeError):

@@ -84,6 +84,8 @@ export interface AnalysisDataset {
   rows: Array<Record<string, unknown>>;
   row_count: number;
   quality: DatasetQuality;
+  truncated?: boolean;
+  truncation_reason?: "row_limit" | "byte_limit" | null;
 }
 
 export interface EvidenceRecord {

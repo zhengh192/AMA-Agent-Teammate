@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -84,7 +86,7 @@ def test_journey_diagnostic_compares_stage_distribution_without_claiming_cause()
     assert computation.summary["windows"]["incident"]["success_rate"] == 0.1
     assert computation.summary["success_rate_change"] == pytest.approx(-0.2)
     assert computation.summary["largest_share_increase_stage"] == "KA"
-    assert computation.summary["next_layer"] == "bounded_response_theme_review"
+    assert computation.summary["next_layer"] == "response_evidence_unavailable"
     assert [item["key"] for item in computation.summary["hierarchy"]] == [
         "agent_stage",
         "symptom",
@@ -107,7 +109,7 @@ def test_journey_diagnostic_skill_is_active_and_in_execution_plan() -> None:
     assert issues == []
     package = registry.get("case_journey_diagnostics")
     assert package.metadata.status == SkillStatus.ACTIVE
-    assert package.metadata.version == "1.1.0"
+    assert package.metadata.version == "1.2.0"
     contract = package.metadata.journey_diagnostic_contract
     assert contract is not None
     assert [level.key for level in contract.hierarchy] == [
@@ -118,4 +120,132 @@ def test_journey_diagnostic_skill_is_active_and_in_execution_plan() -> None:
     execution_plan = registry.build_execution_plan(
         AnalysisKind.JOURNEY_DIAGNOSTIC, "Why did case volume drop on July 5?"
     )
+    assert any(step.skill.id == "case_journey_diagnostics" for step in execution_plan)
+
+
+def test_optional_levels_stop_at_stage_and_attach_response_evidence() -> None:
+    registry, issues = AnalysisSkillRegistry.load(ROOT / "skills")
+    assert issues == []
+    contract = registry.get("case_journey_diagnostics").metadata.journey_diagnostic_contract
+    assert contract is not None
+    rows = [
+        {
+            "record_type": "distribution",
+            "comparison_date": date(2026, 7, 4),
+            "comparison_window": "baseline",
+            "outcome": "FAILED",
+            "agent_stage": "MAIN",
+            "symptom": "UNKNOWN_SYMPTOM",
+            "flow_step": "UNKNOWN_FLOW_STEP",
+            "value": 10,
+            "bot_response_1": "Please provide the device serial number.",
+        },
+        {
+            "record_type": "distribution",
+            "comparison_date": date(2026, 7, 5),
+            "comparison_window": "incident",
+            "outcome": "FAILED",
+            "agent_stage": "MAIN",
+            "symptom": "UNKNOWN_SYMPTOM",
+            "flow_step": "UNKNOWN_FLOW_STEP",
+            "value": 30,
+            "bot_response_1": "The troubleshooting service is currently unavailable.",
+        },
+        {
+            "record_type": "distribution",
+            "comparison_date": date(2026, 7, 4),
+            "comparison_window": "baseline",
+            "outcome": "CASE_CREATED",
+            "agent_stage": "CASE_CREATED",
+            "symptom": "UNKNOWN_SYMPTOM",
+            "flow_step": "UNKNOWN_FLOW_STEP",
+            "value": 30,
+            "bot_response_1": None,
+        },
+        {
+            "record_type": "distribution",
+            "comparison_date": date(2026, 7, 5),
+            "comparison_window": "incident",
+            "outcome": "CASE_CREATED",
+            "agent_stage": "CASE_CREATED",
+            "symptom": "UNKNOWN_SYMPTOM",
+            "flow_step": "UNKNOWN_FLOW_STEP",
+            "value": 10,
+            "bot_response_1": None,
+        },
+    ]
+    dataset = Dataset(
+        id="stage-only-response-evidence",
+        source_ids=["super_agent_uat"],
+        columns=list(rows[0]),
+        rows=rows,
+        row_count=len(rows),
+        result_bytes=2_000,
+        quality=DatasetQuality(
+            confidence=DataConfidence.HIGH,
+            row_count=len(rows),
+            missing_by_column={},
+            duplicate_rows=0,
+            warnings=[],
+        ),
+        query_proposal_ids=["case-journey-query"],
+    )
+    intent = AnalysisIntent(
+        analysis_type=AnalysisKind.JOURNEY_DIAGNOSTIC,
+        metric="Case Journey Stage Diagnostic",
+        dimensions=["comparison_window", "agent_stage", "symptom", "flow_step"],
+        source_ids=["super_agent_uat"],
+        start_date="2026-07-02",
+        end_date="2026-07-06",
+        chart_type=ChartKind.BAR,
+        success_criteria="Attach response evidence at the deepest reliable level.",
+        response_language="en",
+        journey_diagnostic_contract=contract,
+    )
+
+    computation = ControlledAnalysisEngine().analyze(intent, dataset, None)
+
+    hierarchy = computation.summary["hierarchy"]
+    assert hierarchy[0]["selected"] == "MAIN"
+    assert hierarchy[1]["selected"] is None
+    assert hierarchy[1]["skipped_reason"] == "coverage_below_threshold"
+    assert len(hierarchy) == 2
+    response_evidence = computation.summary["response_evidence"]
+    assert response_evidence["selected_path"] == {"agent_stage": "MAIN"}
+    assert response_evidence["incident_sample_count"] == 1
+    assert response_evidence["baseline_sample_count"] == 1
+    assert (
+        response_evidence["samples"]["incident"][0]["bot_response"]
+        == "The troubleshooting service is currently unavailable."
+    )
+    assert computation.summary["next_layer"] == "response_evidence_attached"
+    assert any("Bot-response evidence" in item.title for item in computation.evidence)
+    for evidence in computation.evidence:
+        json.dumps(evidence.support)
+    EvidenceValidator().validate(computation)
+
+def test_runtime_context_exposes_versioned_skill_instructions_to_the_model() -> None:
+    registry, issues = AnalysisSkillRegistry.load(ROOT / "skills")
+    assert issues == []
+
+    context = registry.runtime_context(
+        "Why did case creation rate drop and where did failed sessions exit?",
+        include_instructions=True,
+    )
+
+    journey = next(item for item in context if item["id"] == "case_journey_diagnostics")
+    assert journey["version"] == "1.2.0"
+    assert "Agent stage" in str(journey["instructions"])
+    assert journey["deterministic_operations"]
+
+
+def test_explicit_skill_name_is_attached_without_fuzzy_matching() -> None:
+    registry, issues = AnalysisSkillRegistry.load(ROOT / "skills")
+    assert issues == []
+
+    execution_plan = registry.build_execution_plan(
+        AnalysisKind.TREND,
+        "Use the active Case Journey Diagnostics skill for this investigation.",
+    )
+
     assert any(step.skill.id == "case_journey_diagnostics" for step in execution_plan)

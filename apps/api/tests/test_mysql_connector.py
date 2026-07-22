@@ -13,6 +13,7 @@ from ama_teammate.data_access.mysql import (
     MySQLPrivilegeAssessment,
     MySQLReadOnlyConnector,
     MySQLTableSnapshot,
+    _bounded_result_rows,
     _pymysql_parameter_sql,
     assess_mysql_grants,
     validate_mysql_select,
@@ -243,3 +244,20 @@ def test_mysql_guard_allows_protected_identifier_only_inside_aggregate() -> None
             allowed_tables=frozenset({"visit_log"}),
             aggregate_only_columns=frozenset({"eticket_case_number"}),
         )
+
+def test_result_rows_are_truncated_instead_of_failing_the_run() -> None:
+    rows = [
+        {"session_id": "s1", "bot_response": "a" * 2_000},
+        {"session_id": "s2", "bot_response": "b" * 2_000},
+    ]
+
+    bounded, truncated = _bounded_result_rows(rows, 700)
+
+    assert truncated is True
+    assert bounded
+    assert "[truncated]" in str(bounded[0]["bot_response"])
+    assert len(
+        __import__("json").dumps(
+            bounded, ensure_ascii=False, separators=(",", ":")
+        ).encode("utf-8")
+    ) <= 700

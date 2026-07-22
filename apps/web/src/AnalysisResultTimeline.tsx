@@ -19,6 +19,24 @@ interface DiagnosticLevel {
   display_rows: DiagnosticRow[];
 }
 
+interface ResponseSample {
+  comparison_date: string | null;
+  agent_stage: unknown;
+  symptom: unknown;
+  flow_step: unknown;
+  bot_response: string;
+}
+
+interface ResponseEvidenceSummary {
+  selected_path: Record<string, string>;
+  incident_sample_count: number;
+  baseline_sample_count: number;
+  samples: {
+    incident: ResponseSample[];
+    baseline: ResponseSample[];
+  };
+}
+
 function formatNumber(value: number) {
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value);
 }
@@ -32,6 +50,18 @@ export function AnalysisResultTimeline({ result }: AnalysisResultTimelineProps) 
   const diagnosticHierarchy = Array.isArray(result.computation.summary.hierarchy)
     ? result.computation.summary.hierarchy as DiagnosticLevel[]
     : [];
+  const responseEvidence = (
+    result.computation.summary.response_evidence
+    && typeof result.computation.summary.response_evidence === "object"
+  )
+    ? result.computation.summary.response_evidence as ResponseEvidenceSummary
+    : null;
+  const displayColumns = finalDataset?.columns.filter(
+    (column) => column !== "record_type" && !column.startsWith("bot_response_"),
+  ) ?? [];
+  const displayRows = finalDataset?.rows.filter(
+    (row) => row.record_type !== "response_evidence",
+  ) ?? [];
   const epistemicLabel = (value: string) => {
     if (!chinese) return value;
     return { Confirmed: "已确认", Inferred: "推断", Unknown: "尚不确定" }[value] ?? value;
@@ -60,7 +90,9 @@ export function AnalysisResultTimeline({ result }: AnalysisResultTimelineProps) 
       </div>
       <div className="result-grid">
         <article className="analysis-card chart-card">
-          <h3>{chinese ? "Agent 阶段对比" : result.chart.chart_type.replaceAll("_", " ")}</h3>
+          <h3>{diagnosticHierarchy.length > 0
+            ? (chinese ? "Agent 阶段对比" : "Agent-stage comparison")
+            : result.chart.chart_type.replaceAll("_", " ")}</h3>
           <PlotlyFigure figure={result.chart.figure} />
           {result.chart.fallback_table ? (
             <p className="warning">{chinese ? "原图表不适合当前结果，已改用表格。" : "The requested chart was unsuitable; a table fallback was used."}</p>
@@ -113,23 +145,59 @@ export function AnalysisResultTimeline({ result }: AnalysisResultTimelineProps) 
           </div>
         </article>
       ))}
+      {responseEvidence ? (
+        <article className="analysis-card response-evidence-card">
+          <div className="card-heading">
+            <div>
+              <h3>{chinese ? "离开位置的 Bot 回复证据" : "Bot-response evidence at the exit location"}</h3>
+              <p className="muted">
+                {chinese ? "用于辅助人工判断问题场景，不把单条话术当作根因。" : "Use these samples for diagnosis; a single response does not prove root cause."}
+              </p>
+            </div>
+            <span>{Object.values(responseEvidence.selected_path).join(" / ")}</span>
+          </div>
+          <div className="response-window-grid">
+            {(["incident", "baseline"] as const).map((window) => (
+              <section key={window}>
+                <h4>{window === "incident"
+                  ? (chinese ? "异常期样本" : "Incident samples")
+                  : (chinese ? "基线样本" : "Baseline samples")}</h4>
+                {responseEvidence.samples[window].length === 0 ? (
+                  <p className="muted">{chinese ? "当前没有可用样本。" : "No sample is available."}</p>
+                ) : responseEvidence.samples[window].map((sample, index) => (
+                  <details className="response-sample" key={`${window}-${index}`}>
+                    <summary>{sample.comparison_date ?? "—"} · {
+                      [sample.agent_stage, sample.symptom, sample.flow_step]
+                        .filter(Boolean).join(" / ")
+                    }</summary>
+                    <p>{sample.bot_response}</p>
+                  </details>
+                ))}
+              </section>
+            ))}
+          </div>
+        </article>
+      ) : null}
       <article className="analysis-card">
         <div className="card-heading">
-          <h3>{chinese ? "原始结果表" : "Result table"}</h3>
-          <span>{finalDataset.row_count} {chinese ? "行" : "rows"}</span>
+          <h3>{chinese ? "计算结果表" : "Result table"}</h3>
+          <span>{displayRows.length} {chinese ? "行" : "rows"}</span>
         </div>
         <div className="table-scroll">
-          <table>
+          <table aria-label={chinese ? "计算结果表" : "Result table"}>
             <thead>
               <tr>
-                {finalDataset.columns.map((column) => <th key={column}>{column}</th>)}
+                {displayColumns.map((column) => <th key={column}>{column}</th>)}
               </tr>
             </thead>
             <tbody>
-              {finalDataset.rows.map((row, index) => (
+              {displayRows.map((row, index) => (
                 <tr key={index}>
-                  {finalDataset.columns.map((column) => (
-                    <td key={column}>{String(row[column] ?? "—")}</td>
+                  {displayColumns.map((column) => (
+                    <td
+                      className={typeof row[column] === "string" && String(row[column]).length > 80 ? "long-text-cell" : undefined}
+                      key={column}
+                    >{String(row[column] ?? "—")}</td>
                   ))}
                 </tr>
               ))}

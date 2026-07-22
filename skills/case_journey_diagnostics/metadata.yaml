@@ -1,12 +1,12 @@
 id: case_journey_diagnostics
 name: Case Journey Diagnostics
-version: 1.1.0
+version: 1.2.0
 status: active
 description: Diagnose case-volume or case-rate incidents by comparing success and failed-session exit stages before reviewing bounded response themes.
 owner: Super Agent Data and Operations
 reviewer: Data Governance
 created_at: 2026-07-19T00:00:00Z
-updated_at: 2026-07-20T15:52:55Z
+updated_at: 2026-07-21T17:20:00Z
 effective_from: 2026-07-19
 effective_to: null
 aliases:
@@ -83,14 +83,28 @@ journey_diagnostic_contract:
     - key: agent_stage
       label_en: Agent stage
       label_zh: "\u0041\u0067\u0065\u006e\u0074 \u9636\u6bb5"
+      required: true
+      minimum_coverage: 0.0
     - key: symptom
       label_en: Symptom
       label_zh: "\u75c7\u72b6"
+      required: false
+      minimum_coverage: 0.5
     - key: flow_step
       label_en: Step
       label_zh: "\u6b65\u9aa4"
+      required: false
+      minimum_coverage: 0.5
   show_top_n: 5
   small_sample_threshold: 5
   drill_down_only_positive_parent: true
   evidence_style: numbered_labels
   output_language: match_user
+  response_evidence:
+    enabled: true
+    source_table: turn_log
+    response_field: bot_response
+    selector: last_relevant_turn
+    compare_with_baseline: true
+    max_responses_per_bucket: 5
+    max_response_characters: 1000

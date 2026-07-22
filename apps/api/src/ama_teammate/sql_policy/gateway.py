@@ -32,8 +32,11 @@ class SQLSafetyGateway:
         if len(statements) != 1:
             raise SQLPolicyViolation("multiple_statements", "Exactly one SQL statement is allowed.")
         statement = statements[0]
-        if not isinstance(statement, exp.Select):
-            raise SQLPolicyViolation("read_only_required", "Only SELECT queries are allowed.")
+        if not isinstance(statement, exp.Query) or statement.find(exp.Select) is None:
+            raise SQLPolicyViolation(
+                "read_only_required",
+                "Only SELECT queries and read-only SELECT set operations are allowed.",
+            )
         if self._contains_write_or_admin(statement):
             raise SQLPolicyViolation("write_or_admin", "Write and administrative SQL are blocked.")
         if any(True for _ in statement.find_all(exp.Star)):
@@ -177,7 +180,7 @@ class SQLSafetyGateway:
         return tables, schemas
 
     @staticmethod
-    def _select_aliases(statement: exp.Select) -> Iterable[str]:
+    def _select_aliases(statement: exp.Expression) -> Iterable[str]:
         for select in statement.find_all(exp.Select):
             for expression in select.expressions:
                 if expression.alias:

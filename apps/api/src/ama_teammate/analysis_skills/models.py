@@ -61,6 +61,18 @@ class DiagnosticHierarchyLevel(StrictModel):
     key: Literal["agent_stage", "symptom", "flow_step"]
     label_en: str = Field(min_length=1, max_length=80)
     label_zh: str = Field(min_length=1, max_length=80)
+    required: bool = True
+    minimum_coverage: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+class JourneyResponseEvidenceContract(StrictModel):
+    enabled: bool = True
+    source_table: Literal["turn_log"] = "turn_log"
+    response_field: Literal["bot_response"] = "bot_response"
+    selector: Literal["last_relevant_turn"] = "last_relevant_turn"
+    compare_with_baseline: bool = True
+    max_responses_per_bucket: int = Field(default=5, ge=1, le=20)
+    max_response_characters: int = Field(default=1_000, ge=100, le=2_000)
 
 
 class JourneyDiagnosticContract(StrictModel):
@@ -74,6 +86,7 @@ class JourneyDiagnosticContract(StrictModel):
     drill_down_only_positive_parent: bool = True
     evidence_style: Literal["numbered_labels"] = "numbered_labels"
     output_language: Literal["match_user"] = "match_user"
+    response_evidence: JourneyResponseEvidenceContract | None = None
 
     @model_validator(mode="after")
     def require_unique_hierarchy(self) -> JourneyDiagnosticContract:

@@ -79,6 +79,8 @@ class AnalysisTaskUnderstanding(BaseModel):
     is_follow_up: bool = False
     needs_clarification: bool = False
     clarification_question: str | None = Field(default=None, max_length=500)
+    investigation_steps: list[InvestigationStep] = Field(default_factory=list, max_length=12)
+    recommended_skill_ids: list[str] = Field(default_factory=list, max_length=8)
 
 
 class AnalysisIntent(BaseModel):
@@ -203,6 +205,8 @@ class Dataset(BaseModel):
     row_count: int
     result_bytes: int
     quality: DatasetQuality
+    truncated: bool = False
+    truncation_reason: Literal["row_limit", "byte_limit"] | None = None
 
 
 class NarrativeClaim(BaseModel):

@@ -24,7 +24,6 @@ from ama_teammate.analysis.uat_intent import (
     is_uat_reference,
     parse_uat_dates,
 )
-from ama_teammate.analysis_skills.models import SkillStatus
 from ama_teammate.analysis_skills.registry import AnalysisSkillRegistry
 from ama_teammate.data_access.registry import ConnectorRegistry
 from ama_teammate.domain.models import new_id
@@ -76,6 +75,7 @@ class AnalysisPlanner:
         semantic_registry: SemanticMetadataRegistry,
         skill_registry: AnalysisSkillRegistry | None = None,
         learned_metrics: LearnedMetricService | None = None,
+        share_skill_instructions_with_model: bool = False,
     ) -> None:
         self.providers = providers
         self.registry = registry
@@ -83,7 +83,10 @@ class AnalysisPlanner:
         self.semantic_registry = semantic_registry
         self.skill_registry = skill_registry
         self.learned_metrics = learned_metrics
-        self.ad_hoc_interpreter = AdHocQueryInterpreter(providers, registry, learned_metrics)
+        self.share_skill_instructions_with_model = share_skill_instructions_with_model
+        self.ad_hoc_interpreter = AdHocQueryInterpreter(
+            providers, registry, learned_metrics, skill_registry
+        )
         self.task_understanding = TaskUnderstandingService(providers)
 
     def _valid_traffic_condition(self, table: str) -> str:
@@ -126,19 +129,14 @@ class AnalysisPlanner:
         definition_change = is_definition_change_request(question)
         task_frame = None
         skill_context = (
-            [
-                {
-                    "id": package.metadata.id,
-                    "description": package.metadata.description,
-                    "analysis_intents": package.metadata.analysis_intents,
-                    "aliases": package.metadata.aliases,
-                    "trigger_examples": package.metadata.trigger_examples.model_dump(),
-                }
-                for package in self.skill_registry.list_packages(SkillStatus.ACTIVE)
-            ]
+            self.skill_registry.runtime_context(
+                question,
+                include_instructions=self.share_skill_instructions_with_model,
+            )
             if self.skill_registry is not None
             else []
         )
+        semantic_context = self._approved_semantic_context(f"{context}\n{question}")
         if not definition_change and is_uat_reference(question, context):
             try:
                 task_frame = await self.task_understanding.understand(
@@ -158,7 +156,14 @@ class AnalysisPlanner:
                 intent = infer_uat_intent(framed_question, context)
             else:
                 intent = (
-                    await self.ad_hoc_interpreter.infer(question, context)
+                    await self.ad_hoc_interpreter.infer(
+                        question,
+                        context,
+                        planning_context={
+                            "approved_skills": skill_context,
+                            "semantic_metadata": semantic_context,
+                        },
+                    )
                     if not definition_change and is_uat_reference(question, context)
                     else None
                 )
@@ -190,7 +195,6 @@ class AnalysisPlanner:
             raise self.learned_metrics.learning_request(question)
         if intent is None:
             catalog = self.registry.redacted_catalog()
-            semantic_context = self._approved_semantic_context(f"{context}\n{question}")
             generated = await self.providers.provider.generate_structured(
                 [
                     ProviderMessage(role="developer", content=ANALYST_INSTRUCTIONS),
@@ -200,6 +204,7 @@ class AnalysisPlanner:
                             f"Current question: {question}\n"
                             f"Conversation context: {context[:8_000]}\n"
                             f"Semantic context: {json.dumps(semantic_context)}\n"
+                            f"Approved Skill context: {json.dumps(skill_context)}\n"
                             f"Catalog: {json.dumps(catalog)}"
                         ),
                     ),
@@ -229,11 +234,16 @@ class AnalysisPlanner:
                 {
                     "task_kind": task_frame.task_kind,
                     "user_goal": task_frame.user_goal,
+                    "investigation_steps": task_frame.investigation_steps,
                 }
             )
         intent = intent.model_copy(update=task_updates)
         skill_plan = (
-            self.skill_registry.build_execution_plan(intent.analysis_type, question)
+            self.skill_registry.build_execution_plan(
+                intent.analysis_type,
+                question,
+                task_frame.recommended_skill_ids if task_frame is not None else None,
+            )
             if self.skill_registry
             else []
         )
@@ -485,7 +495,7 @@ class AnalysisPlanner:
             "source_id": spec.source_id,
             "parameters": parameters,
             "max_rows": min(source.max_rows, 200),
-            "max_result_bytes": min(source.max_result_bytes, 262_144),
+            "max_result_bytes": source.max_result_bytes,
             "timeout_seconds": min(source.timeout_seconds, 10.0),
         }
 
@@ -903,9 +913,9 @@ class AnalysisPlanner:
                 source.max_rows,
                 intent.detail_limit
                 if intent.analysis_type == AnalysisKind.DETAIL
-                else (500 if intent.analysis_type == AnalysisKind.JOURNEY_DIAGNOSTIC else 200),
+                else (1_000 if intent.analysis_type == AnalysisKind.JOURNEY_DIAGNOSTIC else 500),
             ),
-            "max_result_bytes": min(source.max_result_bytes, 262_144),
+            "max_result_bytes": source.max_result_bytes,
             "timeout_seconds": min(source.timeout_seconds, 10.0),
         }
 
@@ -919,7 +929,7 @@ class AnalysisPlanner:
             dimension_expressions = {
                 "agent_stage": (
                     "CASE WHEN JSON_VALID(t.bot_thinking) THEN "
-                    "NULLIF(JSON_UNQUOTE(JSON_EXTRACT(t.bot_thinking, '$[last].agent_type')), '') "
+                    "NULLIF(JSON_UNQUOTE(JSON_EXTRACT(t.bot_thinking, '$[-1].agent_type')), '') "
                     "ELSE NULL END"
                     if "bot_thinking" in turn_columns
                     else "NULL"
@@ -943,6 +953,17 @@ class AnalysisPlanner:
             )
             incident_start = (date.fromisoformat(intent.end_date) - timedelta(days=1)).isoformat()
             parameters["incident_start"] = incident_start
+            response_contract = contract.response_evidence
+            response_enabled = bool(
+                response_contract is not None
+                and response_contract.enabled
+                and response_contract.response_field in turn_columns
+            )
+            response_select = ""
+            cohort_response_select = ""
+            if response_enabled and response_contract is not None:
+                response_select = ",\n    CAST(t.bot_response AS CHAR) AS bot_response"
+                cohort_response_select = ",\n    lt.bot_response"
             sql = f"""
 WITH eligible_visits AS (
   SELECT
@@ -960,7 +981,7 @@ WITH eligible_visits AS (
 last_turns AS (
   SELECT
     t.session_id,
-    {dimension_select},
+    {dimension_select}{response_select},
     ROW_NUMBER() OVER (
       PARTITION BY t.session_id
       ORDER BY t.start_time DESC, t.turn_id DESC
@@ -978,11 +999,51 @@ cohort AS (
     END AS comparison_window,
     CASE WHEN v.eticket_case_number IS NOT NULL OR v.msd_case_number IS NOT NULL
       THEN 'CASE_CREATED' ELSE 'FAILED' END AS outcome,
-    {unknown_dimensions}
+    {unknown_dimensions}{cohort_response_select}
   FROM eligible_visits v
   LEFT JOIN last_turns lt ON lt.session_id = v.session_id AND lt.rn = 1
 )
-SELECT comparison_date, comparison_window, outcome, {dimension_columns}, COUNT(session_id) AS value
+"""
+            if response_enabled and response_contract is not None:
+                evidence_window_filter = (
+                    ""
+                    if response_contract.compare_with_baseline
+                    else "\n    AND comparison_window = 'incident'"
+                )
+
+                sql += f"""
+, journey_counts AS (
+  SELECT comparison_date, comparison_window, outcome, {dimension_columns},
+    COUNT(session_id) AS value
+  FROM cohort
+  GROUP BY comparison_date, comparison_window, outcome, {dimension_columns}
+),
+response_evidence AS (
+  SELECT comparison_date, comparison_window, outcome, {dimension_columns},
+    bot_response,
+    ROW_NUMBER() OVER (
+      PARTITION BY comparison_window, agent_stage
+      ORDER BY comparison_date DESC, session_id
+    ) AS evidence_rank
+  FROM cohort
+  WHERE outcome = 'FAILED'
+    AND bot_response IS NOT NULL
+    AND bot_response <> ''{evidence_window_filter}
+)
+SELECT 'distribution' AS record_type, comparison_date, comparison_window, outcome,
+  {dimension_columns}, value, NULL AS bot_response_1
+FROM journey_counts
+UNION ALL
+SELECT 'response_evidence' AS record_type, comparison_date, comparison_window, outcome,
+  {dimension_columns}, 0 AS value, bot_response AS bot_response_1
+FROM response_evidence
+WHERE evidence_rank <= {response_contract.max_responses_per_bucket}
+ORDER BY record_type, comparison_date, outcome, value DESC
+"""
+            else:
+                sql += f"""
+SELECT 'distribution' AS record_type, comparison_date, comparison_window, outcome,
+  {dimension_columns}, COUNT(session_id) AS value
 FROM cohort
 GROUP BY comparison_date, comparison_window, outcome, {dimension_columns}
 ORDER BY comparison_date, outcome, value DESC
@@ -990,7 +1051,8 @@ ORDER BY comparison_date, outcome, value DESC
             return QueryProposal(
                 purpose=(
                     "Compare daily case outcomes, quantify every failed-session Agent stage, "
-                    "then preserve symptom and step for Skill-driven progressive drill-down."
+                    "use symptom and step only when coverage is sufficient, and attach bounded "
+                    "last-turn bot-response evidence for the localized failed-session cohort."
                 ),
                 sql=sql,
                 **common,

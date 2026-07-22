@@ -86,6 +86,7 @@ async def create_analysis_runtime(
         semantic_registry,
         skill_registry,
         learned_metrics,
+        share_skill_instructions_with_model=settings.ama_share_skill_instructions_with_model,
     )
     service = AnalysisService(
         planner=planner,

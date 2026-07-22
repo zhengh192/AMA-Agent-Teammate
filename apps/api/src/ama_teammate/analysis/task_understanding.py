@@ -6,6 +6,7 @@ from typing import Any
 from ama_teammate.analysis.models import (
     AnalysisTaskKind,
     AnalysisTaskUnderstanding,
+    InvestigationStep,
 )
 from ama_teammate.providers.base import ProviderMessage, StructuredProviderRequest
 from ama_teammate.providers.factory import ProviderBundle
@@ -17,8 +18,10 @@ abnormal, or changed is a diagnosis, not merely a trend chart. A diagnosis must 
 metric and incident date, establish the change against a baseline, localize contributing segments
 or journey stages, and only then inspect deeper evidence. A chart is an output format, never the
 task goal. Do not generate SQL, answer the question, expose chain-of-thought, invent fields, or
-claim that data was queried. Ask for clarification only when the intended outcome or incident is
-materially ambiguous."""
+claim that data was queried. Approved Skill instructions are executable operating guidance, not
+background prose: use them to propose bounded investigation_steps and return their IDs in
+recommended_skill_ids. Never select an unavailable Skill ID. Ask for clarification only when the
+intended outcome or incident is materially ambiguous."""
 
 
 class TaskUnderstandingService:
@@ -135,4 +138,37 @@ def _case_diagnostic_frame(question: str, context: str) -> AnalysisTaskUnderstan
         ),
         subject="Case Creation Rate",
         is_follow_up=bool(context.strip()),
+        investigation_steps=[
+            InvestigationStep(
+                order=1,
+                name="Verify the incident",
+                objective="Quantify the case-creation change against a recent baseline.",
+                completion_signal="The incident magnitude and direction are measured.",
+            ),
+            InvestigationStep(
+                order=2,
+                name="Localize the Agent stage",
+                objective="Compare every failed-session Agent-stage bucket with its baseline.",
+                completion_signal="The largest excess-failure Agent stage is quantified.",
+            ),
+            InvestigationStep(
+                order=3,
+                name="Drill into symptom",
+                objective="Within the selected stage, compare symptom distributions when coverage supports it.",
+                completion_signal="The abnormal symptom branch is quantified or explicitly unavailable.",
+            ),
+            InvestigationStep(
+                order=4,
+                name="Drill into flow step",
+                objective="Within the selected symptom, compare flow-step distributions when coverage supports it.",
+                completion_signal="The abnormal step is quantified or explicitly unavailable.",
+            ),
+            InvestigationStep(
+                order=5,
+                name="Inspect response evidence",
+                objective="Review bounded incident and baseline bot-response samples for the localized branch.",
+                completion_signal="Observed response evidence is available for a human diagnosis.",
+            ),
+        ],
+        recommended_skill_ids=["case_journey_diagnostics"],
     )

@@ -325,7 +325,9 @@ class MySQLReadOnlyConnector:
             async with asyncio.timeout(
                 min(request.timeout_seconds, self.config.timeout_seconds) + 1
             ):
-                columns, rows = await asyncio.to_thread(self._execute_sync, request)
+                columns, rows, row_truncated = await asyncio.to_thread(
+                    self._execute_sync, request
+                )
         except TimeoutError as exc:
             raise QueryExecutionFailure("timeout", "The read-only query timed out.") from exc
         except QueryExecutionFailure:
@@ -335,9 +337,14 @@ class MySQLReadOnlyConnector:
         except pymysql.MySQLError as exc:
             raise QueryExecutionFailure("database", "The read-only query failed safely.") from exc
 
-        result_bytes = len(json.dumps(rows, ensure_ascii=False, default=str).encode("utf-8"))
-        if result_bytes > min(request.max_result_bytes, self.config.max_result_bytes):
-            raise QueryExecutionFailure("limit", "The query exceeded the approved byte limit.")
+        byte_limit = min(request.max_result_bytes, self.config.max_result_bytes)
+        rows, byte_truncated = _bounded_result_rows(rows, byte_limit)
+        result_bytes = len(
+            json.dumps(rows, ensure_ascii=False, default=str, separators=(",", ":")).encode("utf-8")
+        )
+        truncation_reason = (
+            "byte_limit" if byte_truncated else ("row_limit" if row_truncated else None)
+        )
         return QueryExecutionResult(
             source_id=self.config.id,
             columns=columns,
@@ -345,11 +352,13 @@ class MySQLReadOnlyConnector:
             row_count=len(rows),
             result_bytes=result_bytes,
             duration_ms=(time.perf_counter() - started) * 1_000,
+            truncated=row_truncated or byte_truncated,
+            truncation_reason=truncation_reason,
         )
 
     def _execute_sync(
         self, request: QueryExecutionRequest
-    ) -> tuple[list[str], list[dict[str, Any]]]:
+    ) -> tuple[list[str], list[dict[str, Any]], bool]:
         limit = min(request.max_rows, self.config.max_rows)
         connection = _connect(self.options)
         try:
@@ -362,12 +371,43 @@ class MySQLReadOnlyConnector:
                 columns = [item[0] for item in cursor.description or ()]
         finally:
             connection.close()
-        if len(raw_rows) > limit:
-            raise QueryExecutionFailure("limit", "The query exceeded the approved row limit.")
-        return columns, [dict(row) for row in raw_rows]
+        truncated = len(raw_rows) > limit
+        return columns, [dict(row) for row in raw_rows[:limit]], truncated
 
     async def close(self) -> None:
         return None
+
+
+def _bounded_result_rows(
+    rows: list[dict[str, Any]], max_bytes: int
+) -> tuple[list[dict[str, Any]], bool]:
+    bounded: list[dict[str, Any]] = []
+    encoded_bytes = 2
+    truncated = False
+    for source_row in rows:
+        row = dict(source_row)
+        encoded = json.dumps(
+            row, ensure_ascii=False, default=str, separators=(",", ":")
+        ).encode("utf-8")
+        if len(encoded) + 2 > max_bytes:
+            strings = [key for key, value in row.items() if isinstance(value, str)]
+            if strings:
+                per_field = max(128, max_bytes // max(4, len(strings) * 2))
+                for key in strings:
+                    value = str(row[key])
+                    if len(value) > per_field:
+                        row[key] = value[:per_field] + "… [truncated]"
+                encoded = json.dumps(
+                    row, ensure_ascii=False, default=str, separators=(",", ":")
+                ).encode("utf-8")
+                truncated = True
+        separator = 1 if bounded else 0
+        if encoded_bytes + separator + len(encoded) > max_bytes:
+            truncated = True
+            break
+        bounded.append(row)
+        encoded_bytes += separator + len(encoded)
+    return bounded, truncated or len(bounded) < len(rows)
 
 
 def _ssl_context(options: MySQLConnectionOptions) -> ssl.SSLContext:

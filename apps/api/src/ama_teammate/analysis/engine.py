@@ -117,7 +117,17 @@ class ControlledAnalysisEngine:
             str,
             dict[str, dict[tuple[str, tuple[str, ...]], float]],
         ] = defaultdict(lambda: defaultdict(lambda: defaultdict(float)))
+        distribution_rows = [
+            row for row in dataset.rows if row.get("record_type") in {None, "", "distribution"}
+        ]
+        response_rows: list[dict[str, Any]] = []
         for row in dataset.rows:
+            for key, response in row.items():
+                suffix = key.removeprefix("bot_response_")
+                if suffix == key or not suffix.isdigit() or response in {None, ""}:
+                    continue
+                response_rows.append({**row, "bot_response": str(response)})
+        for row in distribution_rows:
             window = str(row.get("comparison_window", "unknown"))
             comparison_date = str(row.get("comparison_date", "unknown"))
             outcome = str(row.get("outcome", "FAILED"))
@@ -232,6 +242,34 @@ class ControlledAnalysisEngine:
         levels: list[dict[str, Any]] = []
         parent_values: list[str] = []
         for level_index, key in enumerate(hierarchy):
+            level_contract = contract.hierarchy[level_index]
+            incident_total = 0.0
+            incident_known = 0.0
+            for day_rows in daily.get("incident", {}).values():
+                for (outcome, path), amount in day_rows.items():
+                    if outcome == "CASE_CREATED" or path[:level_index] != tuple(parent_values):
+                        continue
+                    incident_total += amount
+                    if not path[level_index].startswith("UNKNOWN_"):
+                        incident_known += amount
+            coverage = incident_known / incident_total if incident_total else 0.0
+            if not level_contract.required and coverage < level_contract.minimum_coverage:
+                levels.append(
+                    {
+                        "key": key,
+                        "label": labels[key],
+                        "parent": {
+                            hierarchy[index]: value for index, value in enumerate(parent_values)
+                        },
+                        "rows": [],
+                        "display_rows": [],
+                        "selected": None,
+                        "coverage": coverage,
+                        "minimum_coverage": level_contract.minimum_coverage,
+                        "skipped_reason": "coverage_below_threshold",
+                    }
+                )
+                break
             rows = breakdown(level_index, tuple(parent_values))
             selected: str | None = None
             if rows:
@@ -247,12 +285,14 @@ class ControlledAnalysisEngine:
                     "key": key,
                     "label": labels[key],
                     "parent": {
-                        hierarchy[index]: value
-                        for index, value in enumerate(parent_values)
+                        hierarchy[index]: value for index, value in enumerate(parent_values)
                     },
                     "rows": rows,
                     "display_rows": rows[: contract.show_top_n],
                     "selected": selected,
+                    "coverage": coverage,
+                    "minimum_coverage": level_contract.minimum_coverage,
+                    "skipped_reason": None,
                 }
             )
             if selected is None:
@@ -343,6 +383,91 @@ class ControlledAnalysisEngine:
                 )
             )
 
+        response_evidence_record: EvidenceRecord | None = None
+        response_evidence_summary: dict[str, Any] | None = None
+        response_contract = contract.response_evidence
+        if (
+            response_contract is not None
+            and response_contract.enabled
+            and parent_values
+            and response_rows
+        ):
+            selected_path = {hierarchy[index]: value for index, value in enumerate(parent_values)}
+            samples: dict[str, list[dict[str, Any]]] = {
+                "incident": [],
+                "baseline": [],
+            }
+            seen: dict[str, set[str]] = {"incident": set(), "baseline": set()}
+            for row in response_rows:
+                window = str(row.get("comparison_window", ""))
+                if window not in samples:
+                    continue
+                if window == "baseline" and not response_contract.compare_with_baseline:
+                    continue
+                if any(
+                    str(row.get(key) or f"UNKNOWN_{key.upper()}") != value
+                    for key, value in selected_path.items()
+                ):
+                    continue
+                response = str(row.get("bot_response") or "").strip()
+                if not response or response in seen[window]:
+                    continue
+                if len(samples[window]) >= response_contract.max_responses_per_bucket:
+                    continue
+                seen[window].add(response)
+                samples[window].append(
+                    {
+                        "comparison_date": (
+                            str(row["comparison_date"])
+                            if row.get("comparison_date") is not None
+                            else None
+                        ),
+                        "agent_stage": row.get("agent_stage"),
+                        "symptom": row.get("symptom"),
+                        "flow_step": row.get("flow_step"),
+                        "bot_response": response[: response_contract.max_response_characters],
+                    }
+                )
+            response_evidence_summary = {
+                "selected_path": selected_path,
+                "incident_sample_count": len(samples["incident"]),
+                "baseline_sample_count": len(samples["baseline"]),
+                "samples": samples,
+                "bounded_examples_only": True,
+            }
+            if samples["incident"] or samples["baseline"]:
+                response_evidence_record = EvidenceRecord(
+                    id=new_id(),
+                    title=(
+                        "\u79bb\u5f00\u4f4d\u7f6e\u7684 Bot \u56de\u590d\u8bc1\u636e"
+                        if chinese
+                        else "Bot-response evidence at the exit location"
+                    ),
+                    dataset_ids=[dataset.id],
+                    query_proposal_ids=dataset.query_proposal_ids,
+                    calculation=(
+                        "\u5728\u5df2\u5b9a\u4f4d\u7684\u5931\u8d25 session \u4e2d\uff0c\u5bf9\u6bd4\u5f02\u5e38\u671f\u4e0e\u57fa\u7ebf\u671f\u6700\u540e\u76f8\u5173\u8f6e\u6b21\u7684\u6709\u754c bot_response \u6837\u672c\u3002"
+                        if chinese
+                        else (
+                            "Compare bounded last-relevant-turn bot_response samples for the "
+                            "localized failed-session cohort in incident and baseline windows."
+                        )
+                    ),
+                    support=response_evidence_summary,
+                    epistemic_label=EpistemicLabel.CONFIRMED.value,
+                    confidence=0.85,
+                    limitations=[
+                        (
+                            "\u8fd9\u4e9b\u662f\u6709\u754c\u6837\u672c\uff0c\u7528\u4e8e\u8f85\u52a9\u4eba\u5de5\u5224\u65ad\uff0c\u4e0d\u4ee3\u8868\u5168\u91cf\u8bdd\u672f\u5206\u5e03\uff0c\u4e5f\u4e0d\u80fd\u5355\u72ec\u8bc1\u660e\u6839\u56e0\u3002"
+                            if chinese
+                            else (
+                                "These bounded examples support human diagnosis; they are not "
+                                "a full theme distribution and do not independently prove cause."
+                            )
+                        )
+                    ],
+                )
+
         def count_text(value: float) -> str:
             return f"{value:.1f}".rstrip("0").rstrip(".")
 
@@ -420,7 +545,7 @@ class ControlledAnalysisEngine:
                     if chinese
                     else (
                         "These distributions locate the stage, symptom, and step where the "
-                        "increase concentrated, but do not by themselves prove whether PD/KA, "
+                        "increase concentrated. This evidence does not prove whether PD/KA, "
                         "ticket creation, or user behavior caused it."
                     )
                 ),
@@ -431,6 +556,21 @@ class ControlledAnalysisEngine:
                 ][:10],
             )
         )
+        if response_evidence_record is not None:
+            conclusions.append(
+                Conclusion(
+                    text=(
+                        "\u5df2\u5728\u6700\u6df1\u53ef\u9760\u7684\u79bb\u5f00\u4f4d\u7f6e\u9644\u4e0a\u5f02\u5e38\u671f\u4e0e\u57fa\u7ebf\u671f\u7684 Bot \u56de\u590d\u6837\u672c\uff0c\u4f9b\u4eba\u5de5\u5224\u65ad\u95ee\u9898\u573a\u666f\u3002"
+                        if chinese
+                        else (
+                            "Bounded incident and baseline bot-response samples are attached at "
+                            "the deepest reliable exit location for human diagnosis."
+                        )
+                    ),
+                    epistemic_label=EpistemicLabel.CONFIRMED.value,
+                    evidence_ids=[response_evidence_record.id],
+                )
+            )
         return (
             {
                 "response_language": intent.response_language,
@@ -439,16 +579,19 @@ class ControlledAnalysisEngine:
                 "hierarchy": levels,
                 "stage_shifts": stage_shifts,
                 "largest_share_increase_stage": strongest_stage,
+                "response_evidence": response_evidence_summary,
                 "next_layer": (
-                    "bounded_response_theme_review"
-                    if len(levels) == len(hierarchy)
-                    and levels
-                    and levels[-1]["selected"] is not None
-                    else None
+                    "response_evidence_attached"
+                    if response_evidence_record is not None
+                    else "response_evidence_unavailable"
                 ),
                 "skill_contract": contract.model_dump(mode="json"),
             },
-            [pattern_evidence, *hierarchy_evidence],
+            [
+                pattern_evidence,
+                *hierarchy_evidence,
+                *([response_evidence_record] if response_evidence_record is not None else []),
+            ],
             conclusions,
         )
 
